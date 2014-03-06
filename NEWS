@@ -1,3 +1,129 @@
+Changes from Hy 0.9.11
+
+   tl;dr:
+
+    0.9.12 comes with some massive changes,
+    We finally took the time to implement gensym, as well as a few
+    other bits that help macro writing. Check the changelog for
+    what exactly was added. 
+    
+    The biggest feature, Reader Macros, landed later
+    in the cycle, but were big enough to warrent a release on it's
+    own. A huge thanks goes to Foxboron for implementing them
+    and a massive hug goes out to olasd for providing ongoing
+    reviews during the development.
+    
+    Welcome to the new Hy contributors, Henrique Carvalho Alves,
+    Kevin Zita and Kenan Bölükbaşı. Thanks for your work so far,
+    folks!
+    
+    Hope y'all enjoy the finest that 2013 has to offer,
+      - Hy Society
+
+
+    * Special thanks goes to Willyfrog, Foxboron and theanalyst for writing
+      0.9.12's NEWS. Thanks, y'all! (PT)
+
+
+    [ Language Changes ]
+    * Translate foo? -> is_foo, for better Python interop. (PT)
+    * Reader Macros!
+    * Operators + and * now can work without arguments
+    * Define kwapply as a macro
+    * Added apply as a function
+    * Instant symbol generation with gensym
+    * Allow macros to return None
+    * Add a method for casting into byte string or unicode depending on python version
+    * flatten function added to language
+    * Add a method for casting into byte string or unicode depending on python version
+    * Added type coercing to the right integer for the platform
+
+
+    [ Misc. Fixes ]
+    * Added information about core team members
+    * Documentation fixed and extended
+    * Add astor to install_requires to fix hy --spy failing on hy 0.9.11.
+    * Convert stdout and stderr to UTF-8 properly in the run_cmd helper.
+    * Update requirements.txt and setup.py to use rply upstream.
+    * tryhy link added in documentation and README
+    * Command line options documented
+    * Adding support for coverage tests at coveralls.io
+    * Added info about tox, so people can use it prior to a PR
+    * Added the start of hacking rules
+    * Halting Problem removed from example as it was nonfree
+    * Fixed PyPI is now behind a CDN. The --use-mirrors option is deprecated.
+    * Badges for pypi version and downloads.
+
+
+    [ Syntax Fixes ]
+    * get allows multiple arguments
+
+
+    [ Bug Fixes ]
+    *  OSX: Fixes for readline Repl problem which caused HyREPL not allowing 'b'
+    * Fix REPL completions on OSX
+    *  Make HyObject.replace more resilient to prevent compiler breakage.
+
+
+    [ Contrib changes ]
+    * Anaphoric macros added to contrib
+    * Modified eg/twisted to follow the newer hy syntax
+    * Added (experimental) profile module
+
+
+Changes from Hy 0.9.10
+
+    * Many thanks to Guillermo Vayá (Willyfrog) for preparing this release's
+      release notes. Major shout-out. (PT)
+
+    [ Misc. Fixes ]
+
+     * Many many many documentation fixes
+     * Change virtualenv name to be `hy'
+     * Rewrite language.hy not to require hy.core.macros
+     * Rewrite the bootstrap macros in hy
+     * Cleanup the hy.macros module
+     * Add comments to the functions and reorder them
+     * Translation of meth from Python to Hy
+     * PY3 should really check for Python >= 3
+     * Add hy._compat module to unify all Python 2 and 3 compatibility codes.
+     * Import future.print_statement in hy code
+     * Coerce the contents of unquote-splice'd things to a list
+     * Various setup.py enhancements.
+     * PEP8 fixes
+     * Use setuptools.find_packages()
+     * Update PyPI classifiers
+     * Update website URL
+     * Install the argparse module in Python 2.6 and before
+     * Delete the duplicate rply in install_requires. With the PyPI version,
+       tests are failed.
+     * Finally fixed access to hy.core.macros here. have to explicitly require
+       them.
+
+  [ Language Changes ]
+
+    * Slightly cleaner version of drop-while, could use yield-from when ready
+    * Added many native core functions
+    * Add zero? predicate to check if an object is zero
+    * Macro if-python2 for compile-time choice between Python 2 and Python 3
+      code branches
+    * Added new travis make target to skip flake8 on pypy but run
+      it on all others
+    * Add "spy mode" to REPL
+    * Add CL handling to hyc
+    * Add yield from via macro magic.
+    * Add some machinery to avoid importing hy in setup.py
+    * Add a rply-based parser and lexer
+    * Allow quoting lambda list keywords.
+    * Clarified rest / cdr, cleaned up require
+    * Make with return the last expression from its branch
+    * Fix yielding to not suck (#151)
+    * Make assoc accept multiple values, also added a even/odd check for
+      checkargs
+    * Added ability to parse doc strings set in defclass declarations,
+    * Provide bin scripts for both Windows and *nix
+    * Removes setf in favor of setv
+
 Changes from Hy 0.9.9
 
   [ Stupid Fixes ]
