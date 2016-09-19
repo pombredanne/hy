@@ -1,4 +1,4 @@
-# Copyright (c) 2013 James King <james@agentultra.com>
+# Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -18,22 +18,19 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-from hy.models.string import HyString
+from hy.models.list import HyList
+from functools import reduce
 
 
-class HyLambdaListKeyword(HyString):
+class HySet(HyList):
     """
-    Hy LambdaListKeyword. Demarcates arguments in an argument list.
-
-    (defun my-fun (x &rest xs &optional (foo "default string")))
-
-    becomes:
-
-    def my_fun(x, *xs, foo="default string"):
-        pass
+    Hy set (actually a list that pretends to be a set)
     """
 
-    _valid_types = ["&rest", "&optional", "&key", "&kwargs"]
+    def __init__(self, items):
+        items = sorted(items)
+        items = list(reduce(lambda r, v: v in r and r or r+[v], items, []))
+        super(HySet, self).__init__(items)
 
-    def __init__(self, string):
-        self += string
+    def __repr__(self):
+        return "#{%s}" % (" ".join([repr(x) for x in self]))

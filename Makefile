@@ -1,3 +1,9 @@
+pip_url=https://bootstrap.pypa.io/get-pip.py
+python=python
+pip=pip
+coveralls=coveralls
+nose=nosetests
+
 all:
 	@echo "No default step. Use setup.py"
 	@echo ""
@@ -41,7 +47,7 @@ tox: venv
 	tox
 
 flake:
-	flake8 hy
+	flake8 hy tests
 
 clear:
 	clear
@@ -53,13 +59,16 @@ diff:
 
 r: d tox diff
 
-travis:
-	nosetests -s --with-coverage --cover-package hy
-ifeq (PyPy,$(findstring PyPy,$(shell python -V 2>&1 | tail -1)))
-	@echo "skipping flake8 on pypy"
-else
-	flake8 hy bin tests
+python:
+ifeq (Python 2.6,$(findstring Python 2.6,$(shell python -V 2>&1)))
+	$(pip) install unittest2
 endif
+	$(pip) install -r requirements-travis.txt
+	$(pip) install coveralls
+	$(pip) install --allow-all-external -e .
+
+coveralls:
+	$(coveralls)
 
 clean:
 	@find . -name "*.pyc" -exec rm {} \;

@@ -25,24 +25,33 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+from __future__ import print_function
+
 import argparse
 import code
 import ast
 import sys
+import os
+
+import astor.codegen
 
 import hy
 
 from hy.lex import LexException, PrematureEndOfInput, tokenize
 from hy.compiler import hy_compile, HyTypeError
-from hy.importer import ast_compile, import_buffer_to_module
+from hy.importer import (ast_compile, import_buffer_to_module,
+                         import_file_to_ast, import_file_to_hst)
 from hy.completer import completion
+from hy.completer import Completer
+
+from hy.errors import HyIOError
 
 from hy.macros import macro, require
 from hy.models.expression import HyExpression
 from hy.models.string import HyString
 from hy.models.symbol import HySymbol
 
-from hy._compat import builtins
+from hy._compat import builtins, PY3
 
 
 class HyQuitter(object):
@@ -66,7 +75,6 @@ builtins.exit = HyQuitter('exit')
 
 
 def print_python_code(_ast):
-    import astor.codegen
     # astor cannot handle ast.Interactive, so disguise it as a module
     _ast_for_print = ast.Module()
     _ast_for_print.body = _ast.body
@@ -89,7 +97,7 @@ class HyREPL(code.InteractiveConsole):
             if e.source is None:
                 e.source = source
                 e.filename = filename
-            sys.stderr.write(str(e))
+            print(e, file=sys.stderr)
             return False
 
         try:
@@ -102,7 +110,7 @@ class HyREPL(code.InteractiveConsole):
                 e.source = source
                 e.filename = filename
             if SIMPLE_TRACEBACKS:
-                sys.stderr.write(str(e))
+                print(e, file=sys.stderr)
             else:
                 self.showtraceback()
             return False
@@ -123,9 +131,9 @@ def koan_macro():
   "The Nirvana Sutra has the Four Virtues, hasn't it?"
   "It has."
   Ummon asked, picking up a cup, "How many virtues has this?"
-  "None at all, " said the monk.
+  "None at all," said the monk.
   "But ancient people said it had, didn't they?" said Ummon.
-  "Whatdo you think of what they said?"
+  "What do you think of what they said?"
   Ummon struck the cup and asked, "You understand?"
   "No," said the monk.
   "Then," said Ummon, "You'd better go on with your lectures on the sutra."
@@ -171,58 +179,80 @@ require("hy.cmdline", "__main__")
 SIMPLE_TRACEBACKS = True
 
 
-def run_command(source):
+def pretty_error(func, *args, **kw):
     try:
-        import_buffer_to_module("__main__", source)
+        return func(*args, **kw)
     except (HyTypeError, LexException) as e:
         if SIMPLE_TRACEBACKS:
-            sys.stderr.write(str(e))
-            return 1
+            print(e, file=sys.stderr)
+            sys.exit(1)
         raise
-    except Exception:
-        raise
+
+
+def run_command(source):
+    pretty_error(import_buffer_to_module, "__main__", source)
     return 0
+
+
+def run_module(mod_name):
+    from hy.importer import MetaImporter
+    pth = MetaImporter().find_on_path(mod_name)
+    if pth is not None:
+        sys.argv = [pth] + sys.argv
+        return run_file(pth)
+
+    print("{0}: module '{1}' not found.\n".format(hy.__appname__, mod_name),
+          file=sys.stderr)
+    return 1
 
 
 def run_file(filename):
     from hy.importer import import_file_to_module
-    try:
-        import_file_to_module("__main__", filename)
-    except (HyTypeError, LexException) as e:
-        if SIMPLE_TRACEBACKS:
-            sys.stderr.write(str(e))
-            return 1
-        raise
-    except Exception:
-        raise
+    pretty_error(import_file_to_module, "__main__", filename)
     return 0
 
 
 def run_repl(hr=None, spy=False):
+    import platform
     sys.ps1 = "=> "
     sys.ps2 = "... "
 
-    with completion():
-        if not hr:
-            hr = HyREPL(spy)
+    namespace = {'__name__': '__console__', '__doc__': ''}
 
-        hr.interact("{appname} {version}".format(
-            appname=hy.__appname__,
-            version=hy.__version__
-        ))
+    with completion(Completer(namespace)):
+
+        if not hr:
+            hr = HyREPL(spy, namespace)
+
+        hr.interact("{appname} {version} using "
+                    "{py}({build}) {pyversion} on {os}".format(
+                        appname=hy.__appname__,
+                        version=hy.__version__,
+                        py=platform.python_implementation(),
+                        build=platform.python_build()[0],
+                        pyversion=platform.python_version(),
+                        os=platform.system()
+                    ))
 
     return 0
 
 
 def run_icommand(source, spy=False):
     hr = HyREPL(spy)
-    hr.runsource(source, filename='<input>', symbol='single')
+    if os.path.exists(source):
+        with open(source, "r") as f:
+            source = f.read()
+        filename = source
+    else:
+        filename = '<input>'
+    hr.runsource(source, filename=filename, symbol='single')
     return run_repl(hr)
 
 
-USAGE = "%(prog)s [-h | -i cmd | -c cmd | file | -] [arg] ..."
+USAGE = "%(prog)s [-h | -i cmd | -c cmd | -m module | file | -] [arg] ..."
 VERSION = "%(prog)s " + hy.__version__
 EPILOG = """  file         program read from script
+  module       module to execute as main
   -            program read from stdin
   [arg] ...    arguments passed to program in sys.argv[1:]
 """
@@ -236,6 +266,8 @@ def cmdline_handler(scriptname, argv):
         epilog=EPILOG)
     parser.add_argument("-c", dest="command",
                         help="program passed in as a string")
+    parser.add_argument("-m", dest="mod",
+                        help="module to run, passed in as a string")
     parser.add_argument(
         "-i", dest="icommand",
         help="program passed in as a string, then stay in REPL")
@@ -251,9 +283,19 @@ def cmdline_handler(scriptname, argv):
     parser.add_argument('args', nargs=argparse.REMAINDER,
                         help=argparse.SUPPRESS)
 
-    # stash the hy exectuable in case we need it later
+    # stash the hy executable in case we need it later
     # mimics Python sys.executable
     hy.executable = argv[0]
+
+    # need to split the args if using "-m"
+    # all args after the MOD are sent to the module
+    # in sys.argv
+    module_args = []
+    if "-m" in argv:
+        mloc = argv.index("-m")
+        if len(argv) > mloc+2:
+            module_args = argv[mloc+2:]
+            argv = argv[:mloc+2]
 
     options = parser.parse_args(argv[1:])
 
@@ -262,11 +304,15 @@ def cmdline_handler(scriptname, argv):
         SIMPLE_TRACEBACKS = False
 
     # reset sys.argv like Python
-    sys.argv = options.args or [""]
+    sys.argv = options.args + module_args or [""]
 
     if options.command:
         # User did "hy -c ..."
         return run_command(options.command)
+
+    if options.mod:
+        # User did "hy -m ..."
+        return run_module(options.mod)
 
     if options.icommand:
         # User did "hy -i ..."
@@ -281,10 +327,10 @@ def cmdline_handler(scriptname, argv):
             # User did "hy <filename>"
             try:
                 return run_file(options.args[0])
-            except IOError as x:
-                sys.stderr.write("hy: Can't open file '%s': [Errno %d] %s\n" %
-                                 (x.filename, x.errno, x.strerror))
-                sys.exit(x.errno)
+            except HyIOError as e:
+                print("hy: Can't open file '{0}': [Errno {1}] {2}\n".format(
+                    e.filename, e.errno, e.strerror), file=sys.stderr)
+                sys.exit(e.errno)
 
     # User did NOTHING!
     return run_repl(spy=options.spy)
@@ -307,9 +353,75 @@ def hyc_main():
 
     for file in options.files:
         try:
-            write_hy_as_pyc(file)
             print("Compiling %s" % file)
+            pretty_error(write_hy_as_pyc, file)
         except IOError as x:
-            sys.stderr.write("hyc: Can't open file '%s': [Errno %d] %s\n" %
-                             (x.filename, x.errno, x.strerror))
+            print("hyc: Can't open file '{0}': [Errno {1}] {2}\n".format(
+                x.filename, x.errno, x.strerror), file=sys.stderr)
             sys.exit(x.errno)
+
+
+# entry point for cmd line script "hy2py"
+def hy2py_main():
+    import platform
+    module_name = "<STDIN>"
+
+    options = dict(prog="hy2py", usage="%(prog)s [options] FILE",
+                   formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(**options)
+    parser.add_argument("--with-source", "-s", action="store_true",
+                        help="Show the parsed source structure")
+    parser.add_argument("--with-ast", "-a", action="store_true",
+                        help="Show the generated AST")
+    parser.add_argument("--without-python", "-np", action="store_true",
+                        help=("Do not show the Python code generated "
+                              "from the AST"))
+    parser.add_argument('args', nargs=argparse.REMAINDER,
+                        help=argparse.SUPPRESS)
+
+    options = parser.parse_args(sys.argv[1:])
+
+    if not options.args:
+        parser.exit(1, parser.format_help())
+
+    if options.with_source:
+        hst = pretty_error(import_file_to_hst, options.args[0])
+        # need special printing on Windows in case the
+        # codepage doesn't support utf-8 characters
+        if PY3 and platform.system() == "Windows":
+            for h in hst:
+                try:
+                    print(h)
+                except:
+                    print(str(h).encode('utf-8'))
+        else:
+            print(hst)
+        print()
+        print()
+
+    _ast = pretty_error(import_file_to_ast, options.args[0], module_name)
+    if options.with_ast:
+        if PY3 and platform.system() == "Windows":
+            _print_for_windows(astor.dump(_ast))
+        else:
+            print(astor.dump(_ast))
+        print()
+        print()
+
+    if not options.without_python:
+        if PY3 and platform.system() == "Windows":
+            _print_for_windows(astor.codegen.to_source(_ast))
+        else:
+            print(astor.codegen.to_source(_ast))
+
+    parser.exit(0)
+
+
+# need special printing on Windows in case the
+# codepage doesn't support utf-8 characters
+def _print_for_windows(src):
+    for line in src.split("\n"):
+        try:
+            print(line)
+        except:
+            print(line.encode('utf-8'))

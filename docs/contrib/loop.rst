@@ -2,10 +2,10 @@
 loop/recur
 ==========
 
-.. versionadded:: 0.9.13
+.. versionadded:: 0.10.0
 
-The loop/recur macro gives programmers a simple way to use tail-call
-optimization (TCO) in their Hy code.
+The ``loop`` / ``recur`` macro gives programmers a simple way to use
+tail-call optimization (TCO) in their Hy code.
 
     A tail call is a subroutine call that happens inside another
     procedure as its final action; it may produce a return value which
@@ -24,8 +24,8 @@ optimization (TCO) in their Hy code.
     position to be implemented as efficiently as goto statements, thus
     allowing efficient structured programming.
 
-    -- Wikipedia (http://en.wikipedia.org/wiki/Tail_call)
-                  
+    -- Wikipedia (https://en.wikipedia.org/wiki/Tail_call)
+
 Macros
 ======
 
@@ -37,13 +37,13 @@ loop
 ``loop`` establishes a recursion point. With ``loop``, ``recur``
 rebinds the variables set in the recursion point and sends code
 execution back to that recursion point. If ``recur`` is used in a
-non-tail position, an exception is thrown.
+non-tail position, an exception is raised.
 
 Usage: `(loop bindings &rest body)`
 
 Example:
 
-.. code-block:: clojure
+.. code-block:: hy
 
     (require hy.contrib.loop)
 

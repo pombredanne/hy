@@ -2,6 +2,7 @@
 # -*- encoding: utf-8 -*-
 # Copyright (c) 2013 Julien Danjou <julien@danjou.info>
 # Copyright (c) 2013 Will Kahn-Greene <willg@bluesock.org>
+# Copyright (c) 2014 Bob Tolbert <bob@tolbert.org>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -22,12 +23,14 @@
 # DEALINGS IN THE SOFTWARE.
 import os
 import subprocess
+from hy._compat import PY3
 
-from nose.plugins.skip import SkipTest
+
+hy_dir = os.environ.get('HY_DIR', '')
 
 
 def run_cmd(cmd, stdin_data=None):
-    p = subprocess.Popen(cmd,
+    p = subprocess.Popen(os.path.join(hy_dir, cmd),
                          stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE,
@@ -74,6 +77,14 @@ def test_bin_hy_icmd():
 
     assert "monk" in output
     assert "figlet" in output
+
+
+def test_bin_hy_icmd_file():
+    ret = run_cmd("hy -i test_files/icmd_test_file.hy", "(ideas)")
+    assert ret[0] == 0
+    output = ret[1]
+
+    assert "Hy!" in output
 
 
 def test_bin_hy_icmd_and_spy():
@@ -125,19 +136,18 @@ def test_bin_hyc_missing_file():
 
 
 def test_hy2py():
-    # and running this script this way doesn't work on Windows
-    if os.name == "nt":
-        raise SkipTest("doesn't work on Windows")
-
     i = 0
     for dirpath, dirnames, filenames in os.walk("tests/native_tests"):
         for f in filenames:
             if f.endswith(".hy"):
-                i += 1
-                ret = run_cmd("bin/hy2py -s -a " + os.path.join(dirpath, f))
-                assert ret[0] == 0, f
-                assert len(ret[1]) > 1, f
-                assert len(ret[2]) == 0, f
+                if f == "py3_only_tests.hy" and not PY3:
+                    continue
+                else:
+                    i += 1
+                    ret = run_cmd("hy2py -s -a " + os.path.join(dirpath, f))
+                    assert ret[0] == 0, f
+                    assert len(ret[1]) > 1, f
+                    assert len(ret[2]) == 0, f
     assert i
 
 
@@ -146,3 +156,51 @@ def test_bin_hy_builtins():
 
     assert str(exit) == "Use (exit) or Ctrl-D (i.e. EOF) to exit"
     assert str(quit) == "Use (quit) or Ctrl-D (i.e. EOF) to exit"
+
+
+def test_bin_hy_main():
+    ret = run_cmd("hy tests/resources/bin/main.hy")
+    assert ret[0] == 0
+    assert "Hello World" in ret[1]
+
+
+def test_bin_hy_main_args():
+    ret = run_cmd("hy tests/resources/bin/main.hy test 123")
+    assert ret[0] == 0
+    assert "test" in ret[1]
+    assert "123" in ret[1]
+
+
+def test_bin_hy_main_exitvalue():
+    ret = run_cmd("hy tests/resources/bin/main.hy exit1")
+    assert ret[0] == 1
+
+
+def test_bin_hy_no_main():
+    ret = run_cmd("hy tests/resources/bin/nomain.hy")
+    assert ret[0] == 0
+    assert "This Should Still Work" in ret[1]
+
+
+def test_bin_hy_module_main():
+    ret = run_cmd("hy -m tests.resources.bin.main")
+    assert ret[0] == 0
+    assert "Hello World" in ret[1]
+
+
+def test_bin_hy_module_main_args():
+    ret = run_cmd("hy -m tests.resources.bin.main test 123")
+    assert ret[0] == 0
+    assert "test" in ret[1]
+    assert "123" in ret[1]
+
+
+def test_bin_hy_module_main_exitvalue():
+    ret = run_cmd("hy -m tests.resources.bin.main exit1")
+    assert ret[0] == 1
+
+
+def test_bin_hy_module_no_main():
+    ret = run_cmd("hy -m tests.resources.bin.nomain")
+    assert ret[0] == 0
+    assert "This Should Still Work" in ret[1]

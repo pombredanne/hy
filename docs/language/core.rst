@@ -1,23 +1,48 @@
-=================
+=======
 Hy Core
-=================
+=======
 
 
 Core Functions
-===============
+==============
+
+.. _butlast-fn:
+
+butlast
+-------
+
+Usage: ``(butlast coll)``
+
+Returns an iterator of all but the last item in *coll*.
+
+.. code-block:: hy
+
+   => (list (butlast (range 10)))
+   [0, 1, 2, 3, 4, 5, 6, 7, 8]
+
+   => (list (butlast [1]))
+   []
+
+   => (list (butlast []))
+   []
+
+   => (import itertools)
+   => (list (take 5 (butlast (itertools.count 10))))
+   [10, 11, 12, 13, 14]
+
 
 .. _is-coll-fn:
 
 coll?
 -----
 
-.. versionadded:: 0.9.13
+.. versionadded:: 0.10.0
 
 Usage: ``(coll? x)``
 
-Returns true if argument is iterable and not a string.
+Returns ``True`` if *x* is iterable and not a string.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (coll? [1 2 3 4])
    True
@@ -32,13 +57,13 @@ Returns true if argument is iterable and not a string.
 cons
 ----
 
-.. versionadded:: 0.9.13
+.. versionadded:: 0.10.0
 
 Usage: ``(cons a b)``
 
-Returns a fresh :ref:`cons cell <hycons>` with car `a` and cdr `b`.
+Returns a fresh :ref:`cons cell <hycons>` with car *a* and cdr *b*.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (setv a (cons 'hd 'tl))
 
@@ -52,13 +77,13 @@ Returns a fresh :ref:`cons cell <hycons>` with car `a` and cdr `b`.
 cons?
 -----
 
-.. versionadded:: 0.9.13
+.. versionadded:: 0.10.0
 
 Usage: ``(cons? foo)``
 
-Checks whether ``foo`` is a :ref:`cons cell <hycons>`.
+Checks whether *foo* is a :ref:`cons cell <hycons>`.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (setv a (cons 'hd 'tl))
 
@@ -78,11 +103,10 @@ dec
 
 Usage: ``(dec x)``
 
-Return one less than x. Equivalent to ``(- x 1)``.
+Returns one less than *x*. Equivalent to ``(- x 1)``. Raises ``TypeError``
+if ``(not (numeric? x))``.
 
-Raises ``TypeError`` if ``(not (numeric? x))``.
-
-.. code-block:: clojure
+.. code-block:: hy
 
    => (dec 3)
    2
@@ -99,14 +123,14 @@ Raises ``TypeError`` if ``(not (numeric? x))``.
 disassemble
 -----------
 
-.. versionadded:: 0.9.13
+.. versionadded:: 0.10.0
 
 Usage: ``(disassemble tree &optional [codegen false])``
 
-Dump the Python AST for given Hy ``tree`` to standard output. If *codegen*
-is ``true`` function prints Python code instead.
+Dump the Python AST for given Hy *tree* to standard output. If *codegen*
+is ``True``, the function prints Python code instead.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (disassemble '(print "Hello World!"))
    Module(
@@ -117,16 +141,16 @@ is ``true`` function prints Python code instead.
    print('Hello World!')
 
 
-.. _emtpy?-fn:
+.. _empty?-fn:
 
 empty?
 ------
 
 Usage: ``(empty? coll)``
 
-Return True if ``coll`` is empty, i.e. ``(= 0 (len coll))``.
+Returns ``True`` if *coll* is empty. Equivalent to ``(= 0 (len coll))``.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (empty? [])
    True
@@ -143,13 +167,14 @@ Return True if ``coll`` is empty, i.e. ``(= 0 (len coll))``.
 every?
 ------
 
-.. versionadded:: 0.9.13
+.. versionadded:: 0.10.0
 
 Usage: ``(every? pred coll)``
 
-Return True if ``(pred x)`` is logical true for every ``x`` in ``coll``, otherwise False. Return True if ``coll`` is empty.
+Returns ``True`` if ``(pred x)`` is logical true for every *x* in *coll*,
+otherwise ``False``. Return ``True`` if *coll* is empty.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (every? even? [2 4 6])
    True
@@ -171,15 +196,35 @@ float?
 
 Usage: ``(float? x)``
 
-Return True if x is a float.
+Returns ``True`` if *x* is a float.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (float? 3.2)
    True
 
    => (float? -2)
    False
+
+
+.. _fraction-fn:
+
+fraction
+--------
+
+Returns a Python object of type ``fractions.Fraction``.
+
+.. code-block:: hy
+   
+   => (fraction 1 2)
+   Fraction(1, 2)
+
+Note that Hy has a built-in fraction literal that does the same thing:
+
+.. code-block:: hy
+   
+   => 1/2
+   Fraction(1, 2)
 
 
 .. _even?-fn:
@@ -189,11 +234,10 @@ even?
 
 Usage: ``(even? x)``
 
-Return True if x is even.
+Returns ``True`` if *x* is even. Raises ``TypeError`` if
+``(not (numeric? x))``.
 
-Raises ``TypeError`` if ``(not (numeric? x))``.
-
-.. code-block:: clojure
+.. code-block:: hy
 
    => (even? 2)
    True
@@ -212,9 +256,9 @@ identity
 
 Usage: ``(identity x)``
 
-Returns argument supplied to the function
+Returns the argument supplied to the function.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (identity 4)
    4
@@ -230,11 +274,10 @@ inc
 
 Usage: ``(inc x)``
 
-Return one more than x. Equivalent to ``(+ x 1)``.
+Returns one more than *x*. Equivalent to ``(+ x 1)``. Raises ``TypeError``
+if ``(not (numeric? x))``.
 
-Raises ``TypeError`` if ``(not (numeric? x))``.
-
-.. code-block:: clojure
+.. code-block:: hy
 
    => (inc 3)
    4
@@ -251,11 +294,11 @@ Raises ``TypeError`` if ``(not (numeric? x))``.
 instance?
 ---------
 
-Usage: ``(instance? CLASS x)``
+Usage: ``(instance? class x)``
 
-Return True if x is an instance of CLASS.
+Returns ``True`` if *x* is an instance of *class*.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (instance? float 1.0)
    True
@@ -278,16 +321,57 @@ integer?
 
 Usage: ``(integer? x)``
 
-Return True if x is an integer. For Python 2, this is
+Returns `True` if *x* is an integer. For Python 2, this is
 either ``int`` or ``long``. For Python 3, this is ``int``.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (integer? 3)
    True
 
    => (integer? -2.4)
    False
+
+
+.. _interleave-fn:
+
+interleave
+----------
+
+.. versionadded:: 0.10.1
+
+Usage: ``(interleave seq1 seq2 ...)``
+
+Returns an iterable of the first item in each of the sequences,
+then the second, etc.
+
+.. code-block:: hy
+
+   => (list (interleave (range 5) (range 100 105)))
+   [0, 100, 1, 101, 2, 102, 3, 103, 4, 104]
+
+   => (list (interleave (range 1000000) "abc"))
+   [0, 'a', 1, 'b', 2, 'c']
+
+
+.. _interpose-fn:
+
+interpose
+---------
+
+.. versionadded:: 0.10.1
+
+Usage: ``(interpose item seq)``
+
+Returns an iterable of the elements of the sequence separated by the item.
+
+.. code-block:: hy
+
+   => (list (interpose "!" "abcd"))
+   ['a', '!', 'b', '!', 'c', '!', 'd']
+
+   => (list (interpose -1 (range 5)))
+   [0, -1, 1, -1, 2, -1, 3, -1, 4]
 
 
 .. _iterable?-fn:
@@ -297,10 +381,10 @@ iterable?
 
 Usage: ``(iterable? x)``
 
-Return True if x is iterable. Iterable objects return a new iterator
+Returns ``True`` if *x* is iterable. Iterable objects return a new iterator
 when ``(iter x)`` is called. Contrast with :ref:`iterator?-fn`.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => ;; works for strings
    => (iterable? (str "abcde"))
@@ -330,11 +414,11 @@ iterator?
 
 Usage: ``(iterator? x)``
 
-Return True if x is an iterator. Iterators are objects that return
-themselves as an iterator when ``(iter x)`` is called.
-Contrast with :ref:`iterable?-fn`.
+Returns ``True`` if *x* is an iterator. Iterators are objects that return
+themselves as an iterator when ``(iter x)`` is called. Contrast with
+:ref:`iterable?-fn`.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => ;; doesn't work for a list
    => (iterator? [1 2 3 4 5])
@@ -352,15 +436,57 @@ Contrast with :ref:`iterable?-fn`.
    => (iterator? (iter {:a 1 :b 2 :c 3}))
    True
 
+.. _keyword-fn:
+
+keyword
+-------
+
+.. versionadded:: 0.10.1
+
+Usage: ``(keyword "foo")``
+
+Create a keyword from the given value. Strings, numbers, and even
+objects with the `__name__` magic will work.
+
+.. code-block:: hy
+
+   => (keyword "foo")
+   u'\ufdd0:foo'
+
+   => (keyword 1)
+   u'\ufdd0:1'
+
+.. _keyword?-fn:
+
+keyword?
+--------
+
+.. versionadded:: 0.10.1
+
+Usage: ``(keyword? foo)``
+
+Check whether *foo* is a :ref:`keyword<HyKeyword>`.
+
+.. code-block:: hy
+
+   => (keyword? :foo)
+   True
+
+   => (setv foo 1)
+   => (keyword? foo)
+   False
+
+.. _list*-fn:
+
 list*
 -----
 
 Usage: ``(list* head &rest tail)``
 
-Generate a chain of nested cons cells (a dotted list) containing the
+Generates a chain of nested cons cells (a dotted list) containing the
 arguments. If the argument list only has one element, return it.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list* 1 2 3 4)
    (1 2 3 . 4)
@@ -379,13 +505,13 @@ arguments. If the argument list only has one element, return it.
 macroexpand
 -----------
 
-.. versionadded:: 0.9.13
+.. versionadded:: 0.10.0
 
 Usage: ``(macroexpand form)``
 
-Returns the full macro expansion of form.
+Returns the full macro expansion of *form*.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (macroexpand '(-> (a b) (x y)))
    (u'x' (u'a' u'b') u'y')
@@ -398,16 +524,55 @@ Returns the full macro expansion of form.
 macroexpand-1
 -------------
 
-.. versionadded:: 0.9.13
+.. versionadded:: 0.10.0
 
 Usage: ``(macroexpand-1 form)``
 
-Returns the single step macro expansion of form.
+Returns the single step macro expansion of *form*.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (macroexpand-1 '(-> (a b) (-> (c d) (e f))))
    (u'_>' (u'a' u'b') (u'c' u'd') (u'e' u'f'))
+
+
+.. _merge-with-fn:
+
+merge-with
+----------
+
+.. versionadded:: 0.10.1
+
+Usage: ``(merge-with f &rest maps)``
+
+Returns a map that consist of the rest of the maps joined onto first.
+If a key occurs in more than one map, the mapping(s) from the latter
+(left-to-right) will be combined with the mapping in the result by
+calling ``(f val-in-result val-in-latter)``.
+
+.. code-block:: hy
+
+    => (merge-with (fn [x y] (+ x y)) {"a" 10 "b" 20} {"a" 1 "c" 30})
+    {u'a': 11L, u'c': 30L, u'b': 20L}
+
+
+.. _name-fn:
+
+name
+----
+
+.. versionadded:: 0.10.1
+
+Usage: ``(name :keyword)``
+
+Convert the given value to a string. Keyword special character will be
+stripped. Strings will be used as is. Even objects with the `__name__`
+magic will work.
+
+.. code-block:: hy
+
+   => (name :foo)
+   u'foo'
 
 .. _neg?-fn:
 
@@ -416,11 +581,10 @@ neg?
 
 Usage: ``(neg? x)``
 
-Return True if x is less than zero (0).
+Returns ``True`` if *x* is less than zero. Raises ``TypeError`` if
+``(not (numeric? x))``.
 
-Raises ``TypeError`` if ``(not (numeric? x))``.
-
-.. code-block:: clojure
+.. code-block:: hy
 
    => (neg? -2)
    True
@@ -435,13 +599,13 @@ Raises ``TypeError`` if ``(not (numeric? x))``.
 .. _nil?-fn:
 
 nil?
------
+----
 
 Usage: ``(nil? x)``
 
-Return True if x is nil/None.
+Returns ``True`` if *x* is ``nil`` / ``None``.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (nil? nil)
    True
@@ -468,9 +632,9 @@ none?
 
 Usage: ``(none? x)``
 
-Return True if x is None.
+Returns ``True`` if *x* is ``None``.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (none? None)
    True
@@ -492,13 +656,13 @@ Return True if x is None.
 nth
 ---
 
-Usage: ``(nth coll n)``
+Usage: ``(nth coll n &optional [default nil])``
 
-Return the `nth` item in a collection, counting from 0. Unlike
-``get``, ``nth`` works on both iterators and iterables. Returns ``None``
-if the `n` is outside the range of `coll`.
+Returns the *n*-th item in a collection, counting from 0. Return the
+default value, ``nil``, if out of bounds (unless specified otherwise).
+Raises ``ValueError`` if *n* is negative.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (nth [1 2 4 7] 1)
    2
@@ -506,23 +670,32 @@ if the `n` is outside the range of `coll`.
    => (nth [1 2 4 7] 3)
    7
 
-   => (none? (nth [1 2 4 7] 5))
+   => (nil? (nth [1 2 4 7] 5))
    True
+
+   => (nth [1 2 4 7] 5 "default")
+   'default'
 
    => (nth (take 3 (drop 2 [1 2 3 4 5 6])) 2))
    5
 
+   => (nth [1 2 4 7] -1)
+   Traceback (most recent call last):
+     ...
+   ValueError: Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize.
+
+
 .. _numeric?-fn:
 
 numeric?
----------
+--------
 
 Usage: ``(numeric? x)``
 
-Return True if x is a numeric, as defined in the Python
-numbers module class ``numbers.Number``.
+Returns ``True`` if *x* is a numeric, as defined in Python's
+``numbers.Number`` class.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (numeric? -2)
    True
@@ -541,11 +714,10 @@ odd?
 
 Usage: ``(odd? x)``
 
-Return True if x is odd.
+Returns ``True`` if *x* is odd. Raises ``TypeError`` if
+``(not (numeric? x))``.
 
-Raises ``TypeError`` if ``(not (numeric? x))``.
-
-.. code-block:: clojure
+.. code-block:: hy
 
    => (odd? 13)
    True
@@ -556,6 +728,37 @@ Raises ``TypeError`` if ``(not (numeric? x))``.
    => (odd? 0)
    False
 
+.. _partition-fn:
+
+partition
+---------
+
+Usage: ``(partition coll [n] [step] [fillvalue])``
+
+Chunks *coll* into *n*-tuples (pairs by default).
+
+.. code-block:: hy
+
+   => (list (partition (range 10)))  ; n=2
+   [(, 0 1) (, 2 3) (, 4 5) (, 6 7) (, 8 9)]
+
+The *step* defaults to *n*, but can be more to skip elements, or less for a sliding window with overlap.
+
+.. code-block:: hy
+
+   => (list (partition (range 10) 2 3))
+   [(, 0 1) (, 3 4) (, 6 7)]
+   => (list (partition (range 5) 2 1))
+   [(, 0 1) (, 1 2) (, 2 3) (, 3 4)])
+
+The remainder, if any, is not included unless a *fillvalue* is specified.
+
+.. code-block:: hy
+
+   => (list (partition (range 10) 3))
+   [(, 0 1 2) (, 3 4 5) (, 6 7 8)]
+   => (list (partition (range 10) 3 :fillvalue "x"))
+   [(, 0 1 2) (, 3 4 5) (, 6 7 8) (, 9 "x" "x")]
 
 .. _pos?-fn:
 
@@ -564,11 +767,10 @@ pos?
 
 Usage: ``(pos? x)``
 
-Return True if x is greater than zero (0).
+Returns ``True`` if *x* is greater than zero. Raises ``TypeError``
+if ``(not (numeric? x))``.
 
-Raises ``TypeError`` if ``(not (numeric? x))``.
-
-.. code-block:: clojure
+.. code-block:: hy
 
    => (pos? 3)
    True
@@ -583,14 +785,13 @@ Raises ``TypeError`` if ``(not (numeric? x))``.
 .. _second-fn:
 
 second
--------
+------
 
 Usage: ``(second coll)``
 
-Return the second member of ``coll``. Equivalent to
-``(get coll 1)``
+Returns the second member of *coll*. Equivalent to ``(get coll 1)``.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (second [0 1 2])
    1
@@ -601,25 +802,29 @@ Return the second member of ``coll``. Equivalent to
 some
 ----
 
-.. versionadded:: 0.9.13
+.. versionadded:: 0.10.0
 
 Usage: ``(some pred coll)``
 
-Return True if ``(pred x)`` is logical true for any ``x`` in ``coll``, otherwise False. Return False if ``coll`` is empty.
+Returns the first logically-true value of ``(pred x)`` for any ``x`` in
+*coll*, otherwise ``nil``. Return ``nil`` if *coll* is empty.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (some even? [2 4 6])
    True
 
-   => (some even? [1 3 5])
-   False
-
-   => (some even? [1 3 6])
+   => (nil? (some even? [1 3 5]))
    True
 
-   => (some even? [])
-   False
+   => (nil? (some identity [0 "" []]))
+   True
+
+   => (some identity [0 "non-empty-string" []])
+   'non-empty-string'
+
+   => (nil? (some even? []))
+   True
 
 
 .. _string?-fn:
@@ -629,14 +834,31 @@ string?
 
 Usage: ``(string? x)``
 
-Return True if x is a string.
+Returns ``True`` if *x* is a string.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (string? "foo")
    True
 
    => (string? -2)
+   False
+
+.. _symbol?-fn:
+
+symbol?
+-------
+
+Usage: ``(symbol? x)``
+
+Returns ``True`` if *x* is a symbol.
+
+.. code-block:: hy
+
+   => (symbol? 'foo)
+   True
+
+   => (symbol? '[a b c])
    False
 
 .. _zero?-fn:
@@ -646,9 +868,9 @@ zero?
 
 Usage: ``(zero? x)``
 
-Return True if x is zero (0).
+Returns ``True`` if *x* is zero.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (zero? 3)
    False
@@ -661,7 +883,7 @@ Return True if x is zero (0).
 
 
 Sequence Functions
-=======================
+==================
 
 Sequence functions can either create or operate on a potentially
 infinite sequence without requiring the sequence be fully realized in
@@ -671,7 +893,7 @@ iterator.
 We can use the canonical infinite Fibonacci number generator
 as an example of how to use some of these functions.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    (defn fib []
      (setv a 0)
@@ -683,7 +905,7 @@ as an example of how to use some of these functions.
 
 Note the ``(while true ...)`` loop. If we run this in the REPL,
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (fib)
    <generator object fib at 0x101e642d0>
@@ -694,7 +916,7 @@ work until we consume it. Trying something like this is not recommend as
 the infinite loop will run until it consumes all available RAM, or
 in this case until I killed it.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (fib))
    [1]    91474 killed     hy
@@ -703,7 +925,7 @@ in this case until I killed it.
 To get the first 10 Fibonacci numbers, use :ref:`take-fn`. Note that
 :ref:`take-fn` also returns a generator, so I create a list from it.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (take 10 (fib)))
    [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
@@ -711,7 +933,7 @@ To get the first 10 Fibonacci numbers, use :ref:`take-fn`. Note that
 
 To get the Fibonacci number at index 9, (starting from 0):
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (nth (fib) 9)
    34
@@ -720,11 +942,11 @@ To get the Fibonacci number at index 9, (starting from 0):
 .. _cycle-fn:
 
 cycle
-------
+-----
 
 Usage: ``(cycle coll)``
 
-Return an infinite iterator of the members of coll.
+Returns an infinite iterator of the members of coll.
 
 .. code-block:: clj
 
@@ -742,9 +964,9 @@ distinct
 
 Usage: ``(distinct coll)``
 
-Returns an iterator containing only the unique members in ``coll``.
+Returns an iterator containing only the unique members in *coll*.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (distinct [ 1 2 3 4 3 5 2 ]))
    [1, 2, 3, 4, 5]
@@ -763,9 +985,10 @@ drop
 
 Usage: ``(drop n coll)``
 
-Return an iterator, skipping the first ``n`` members of ``coll``
+Returns an iterator, skipping the first *n* members of *coll*.
+Raises ``ValueError`` if *n* is negative.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (drop 2 [1 2 3 4 5]))
    [3, 4, 5]
@@ -779,6 +1002,33 @@ Return an iterator, skipping the first ``n`` members of ``coll``
    => (list (drop 6 [1 2 3 4 5]))
    []
 
+
+.. _drop-last-fn:
+
+drop-last
+---------
+
+Usage: ``(drop-last n coll)``
+
+Returns an iterator of all but the last *n* items in *coll*. Raises
+``ValueError`` if *n* is negative.
+
+.. code-block:: hy
+
+   => (list (drop-last 5 (range 10 20)))
+   [10, 11, 12, 13, 14]
+
+   => (list (drop-last 0 (range 5)))
+   [0, 1, 2, 3, 4]
+
+   => (list (drop-last 100 (range 100)))
+   []
+
+   => (import itertools)
+   => (list (take 5 (drop-last 100 (itertools.count 10))))
+   [10, 11, 12, 13, 14]
+
+
 .. _drop-while-fn:
 
 drop-while
@@ -786,10 +1036,9 @@ drop-while
 
 Usage: ``(drop-while pred coll)``
 
-Return an iterator, skipping members of ``coll`` until ``pred``
-is False.
+Returns an iterator, skipping members of *coll* until *pred* is ``False``.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (drop-while even? [2 4 7 8 9]))
    [7, 8, 9]
@@ -808,11 +1057,11 @@ filter
 
 Usage: ``(filter pred coll)``
 
-Return an iterator for all items in ``coll`` that pass the predicate ``pred``.
+Returns an iterator for all items in *coll* that pass the predicate *pred*.
 
 See also :ref:`remove-fn`.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (filter pos? [1 2 3 -4 5 -7]))
    [1, 2, 3, 5]
@@ -829,10 +1078,10 @@ flatten
 
 Usage: ``(flatten coll)``
 
-Return a single list of all the items in ``coll``, by flattening all
+Returns a single list of all the items in *coll*, by flattening all
 contained lists and/or tuples.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (flatten [1 2 [3 4] 5])
    [1, 2, 3, 4, 5]
@@ -848,9 +1097,9 @@ iterate
 
 Usage: ``(iterate fn x)``
 
-Return an iterator of `x`, `fn(x)`, `fn(fn(x))`.
+Returns an iterator of *x*, *fn(x)*, *fn(fn(x))*, etc.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (take 5 (iterate inc 5)))
    [5, 6, 7, 8, 9]
@@ -859,6 +1108,67 @@ Return an iterator of `x`, `fn(x)`, `fn(fn(x))`.
    [5, 25, 625, 390625, 152587890625]
 
 
+.. _read-fn:
+
+read
+----
+
+Usage: ``(read &optional [from-file eof])``
+
+Reads the next Hy expression from *from-file* (defaulting to ``sys.stdin``), and
+can take a single byte as EOF (defaults to an empty string). Raises ``EOFError``
+if *from-file* ends before a complete expression can be parsed.
+
+.. code-block:: hy
+
+   => (read)
+   (+ 2 2)
+   ('+' 2 2)
+   => (eval (read))
+   (+ 2 2)
+   4
+
+   => (import io)
+   => (def buffer (io.StringIO "(+ 2 2)\n(- 2 1)"))
+   => (eval (apply read [] {"from_file" buffer}))
+   4
+   => (eval (apply read [] {"from_file" buffer}))
+   1
+
+   => ; assuming "example.hy" contains:
+   => ;   (print "hello")
+   => ;   (print "hyfriends!")
+   => (with [f (open "example.hy")]
+   ...   (try
+   ...     (while true
+   ...            (let [exp (read f)]
+   ...              (do
+   ...                (print "OHY" exp)
+   ...                (eval exp))))
+   ...     (except [e EOFError]
+   ...            (print "EOF!"))))
+   OHY ('print' 'hello')
+   hello
+   OHY ('print' 'hyfriends!')
+   hyfriends!
+   EOF!
+
+read-str
+--------
+
+Usage: ``(read-str "string")``
+
+This is essentially a wrapper around `read` which reads expressions from a
+string:
+
+.. code-block:: hy
+
+   => (read-str "(print 1)")
+   (u'print' 1L)
+   => (eval (read-str "(print 1)"))
+   1
+   =>
+
 .. _remove-fn:
 
 remove
@@ -866,12 +1176,12 @@ remove
 
 Usage: ``(remove pred coll)``
 
-Return an iterator from ``coll`` with elements that pass the
-predicate, ``pred``, removed.
+Returns an iterator from *coll* with elements that pass the
+predicate, *pred*, removed.
 
 See also :ref:`filter-fn`.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (remove odd? [1 2 3 4 5 6 7]))
    [2, 4, 6]
@@ -891,9 +1201,9 @@ repeat
 
 Usage: ``(repeat x)``
 
-Return an iterator (infinite) of ``x``.
+Returns an iterator (infinite) of ``x``.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (take 6 (repeat "s")))
    [u's', u's', u's', u's', u's', u's']
@@ -906,9 +1216,9 @@ repeatedly
 
 Usage: ``(repeatedly fn)``
 
-Return an iterator by calling ``fn`` repeatedly.
+Returns an iterator by calling *fn* repeatedly.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (import [random [randint]])
 
@@ -923,9 +1233,10 @@ take
 
 Usage: ``(take n coll)``
 
-Return an iterator containing the first ``n`` members of ``coll``.
+Returns an iterator containing the first *n* members of *coll*.
+Raises ``ValueError`` if *n* is negative.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (take 3 [1 2 3 4 5]))
    [1, 2, 3]
@@ -943,9 +1254,9 @@ take-nth
 
 Usage: ``(take-nth n coll)``
 
-Return an iterator containing every ``nth`` member of ``coll``.
+Returns an iterator containing every *n*-th member of *coll*.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (take-nth 2 [1 2 3 4 5 6 7]))
    [1, 3, 5, 7]
@@ -967,9 +1278,9 @@ take-while
 
 Usage: ``(take-while pred coll)``
 
-Return an iterator from ``coll`` as long as predicate, ``pred`` returns True.
+Returns an iterator from *coll* as long as *pred* returns ``True``.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (list (take-while pos? [ 1 2 3 -4 5]))
    [1, 2, 3]
@@ -979,3 +1290,4 @@ Return an iterator from ``coll`` as long as predicate, ``pred`` returns True.
 
    => (list (take-while neg? [ 1 2 3 -4 5]))
    []
+

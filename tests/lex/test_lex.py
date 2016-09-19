@@ -21,13 +21,13 @@
 
 from hy.models.expression import HyExpression
 from hy.models.integer import HyInteger
-from hy.models.lambdalist import HyLambdaListKeyword
 from hy.models.float import HyFloat
 from hy.models.complex import HyComplex
 from hy.models.symbol import HySymbol
 from hy.models.string import HyString
 from hy.models.dict import HyDict
 from hy.models.list import HyList
+from hy.models.set import HySet
 from hy.models.cons import HyCons
 
 from hy.lex import LexException, PrematureEndOfInput, tokenize
@@ -47,6 +47,11 @@ def test_lex_exception():
         pass
     try:
         tokenize("(defn foo [bar]")
+        assert True is False
+    except PrematureEndOfInput:
+        pass
+    try:
+        tokenize("(foo \"bar")
         assert True is False
     except PrematureEndOfInput:
         pass
@@ -74,7 +79,7 @@ def test_lex_expression_symbols():
 
 
 def test_lex_expression_strings():
-    """ Test that expressions can produce symbols """
+    """ Test that expressions can produce strings """
     objs = tokenize("(foo \"bar\")")
     assert objs == [HyExpression([HySymbol("foo"), HyString("bar")])]
 
@@ -85,14 +90,6 @@ def test_lex_expression_integer():
     assert objs == [HyExpression([HySymbol("foo"), HyInteger(2)])]
 
 
-def test_lex_lambda_list_keyword():
-    """ Make sure expressions can produce lambda list keywords """
-    objs = tokenize("(x &rest xs)")
-    assert objs == [HyExpression([HySymbol("x"),
-                                  HyLambdaListKeyword("&rest"),
-                                  HySymbol("xs")])]
-
-
 def test_lex_symbols():
     """ Make sure that symbols are valid expressions"""
     objs = tokenize("foo ")
@@ -101,14 +98,27 @@ def test_lex_symbols():
 
 def test_lex_strings():
     """ Make sure that strings are valid expressions"""
-    objs = tokenize("\"foo\" ")
+    objs = tokenize('"foo"')
     assert objs == [HyString("foo")]
+    # Make sure backslash-escaped newlines work (see issue #831)
+    objs = tokenize(r"""
+"a\
+bc"
+""")
+    assert objs == [HyString("abc")]
 
 
 def test_lex_integers():
     """ Make sure that integers are valid expressions"""
     objs = tokenize("42 ")
     assert objs == [HyInteger(42)]
+
+
+def test_lex_fractions():
+    """ Make sure that fractions are valid expressions"""
+    objs = tokenize("1/2")
+    assert objs == [HyExpression([HySymbol("fraction"), HyInteger(1),
+                                  HyInteger(2)])]
 
 
 def test_lex_expression_float():
@@ -201,6 +211,21 @@ def test_dicts():
 
     objs = tokenize("{(foo bar) (baz quux)}")
     assert objs == [HyDict([
+        HyExpression([HySymbol("foo"), HySymbol("bar")]),
+        HyExpression([HySymbol("baz"), HySymbol("quux")])
+    ])]
+
+
+def test_sets():
+    """ Ensure that we can tokenize a set. """
+    objs = tokenize("#{1 2}")
+    assert objs == [HySet([HyInteger(1), HyInteger(2)])]
+    objs = tokenize("(bar #{foo bar baz})")
+    assert objs == [HyExpression([HySymbol("bar"),
+                                  HySet(["foo", "bar", "baz"])])]
+
+    objs = tokenize("#{(foo bar) (baz quux)}")
+    assert objs == [HySet([
         HyExpression([HySymbol("foo"), HySymbol("bar")]),
         HyExpression([HySymbol("baz"), HySymbol("quux")])
     ])]
@@ -305,6 +330,24 @@ def test_lex_mangling_qmark():
     assert entry == [HySymbol("is_foo.bar")]
     entry = tokenize(".foo?.bar.baz?")
     assert entry == [HySymbol(".is_foo.bar.is_baz")]
+
+
+def test_lex_mangling_bang():
+    """Ensure that identifiers ending with a bang get mangled ok"""
+    entry = tokenize("foo!")
+    assert entry == [HySymbol("foo_bang")]
+    entry = tokenize("!")
+    assert entry == [HySymbol("!")]
+    entry = tokenize("im!foo")
+    assert entry == [HySymbol("im!foo")]
+    entry = tokenize(".foo!")
+    assert entry == [HySymbol(".foo_bang")]
+    entry = tokenize("foo.bar!")
+    assert entry == [HySymbol("foo.bar_bang")]
+    entry = tokenize("foo!.bar")
+    assert entry == [HySymbol("foo_bang.bar")]
+    entry = tokenize(".foo!.bar.baz!")
+    assert entry == [HySymbol(".foo_bang.bar.baz_bang")]
 
 
 def test_simple_cons():

@@ -23,14 +23,29 @@
 ;;;; to make functional programming slightly easier.
 ;;;;
 
-
+(import itertools)
+(import functools)
+(import collections)
+(import [fractions [Fraction :as fraction]])
+(import operator)  ; shadow not available yet
+(import sys)
+(if-python2
+  (import [StringIO [StringIO]])
+  (import [io [StringIO]]))
 (import [hy._compat [long-type]]) ; long for python2, int for python3
-(import [hy.models.cons [HyCons]])
-
+(import [hy.models.cons [HyCons]]
+        [hy.models.symbol [HySymbol]]
+        [hy.models.keyword [HyKeyword *keyword-prefix*]])
+(import [hy.lex [LexException PrematureEndOfInput tokenize]])
+(import [hy.compiler [HyASTCompiler]])
 
 (defn _numeric-check [x]
   (if (not (numeric? x))
     (raise (TypeError (.format "{0!r} is not a number" x)))))
+
+(defn butlast [coll]
+  "Returns coll except of last element."
+  (drop-last 1 coll))
 
 (defn coll? [coll]
   "Checks whether item is a collection"
@@ -44,15 +59,10 @@
   "Check whether c can be used as a cons object"
   (instance? HyCons c))
 
-(defn cycle [coll]
-  "Yield an infinite repetition of the items in coll"
-  (setv seen [])
-  (for* [x coll]
-    (yield x)
-    (.append seen x))
-  (while seen
-    (for* [x seen]
-      (yield x))))
+(defn keyword? [k]
+  "Check whether k is a keyword"
+  (and (instance? (type :foo) k)
+       (.startswith k (get :foo 0))))
 
 (defn dec [n]
   "Decrement n by 1"
@@ -60,44 +70,99 @@
   (- n 1))
 
 (defn disassemble [tree &optional [codegen false]]
-  "Dump the python AST for a given Hy tree to standard output
+  "Return the python AST for a quoted Hy tree as a string.
    If the second argument is true, generate python code instead."
   (import astor)
   (import hy.compiler)
 
   (fake-source-positions tree)
   (setv compiled (hy.compiler.hy_compile tree (calling-module-name)))
-  (print ((if codegen
+  ((if codegen
             astor.codegen.to_source
             astor.dump)
-          compiled)))
+          compiled))
 
 (defn distinct [coll]
   "Return a generator from the original collection with duplicates
    removed"
-  (let [[seen (set)] [citer (iter coll)]]
-    (for* [val citer]
-      (if (not_in val seen)
-        (do
-         (yield val)
-         (.add seen val))))))
+  (let [seen (set)
+        citer (iter coll)]
+  (for* [val citer]
+    (if (not_in val seen)
+      (do
+       (yield val)
+       (.add seen val))))))
+
+(if-python2
+ (def
+   remove itertools.ifilterfalse
+   zip-longest itertools.izip_longest
+   ;; not builtin in Python3
+   reduce reduce
+   ;; hy is more like Python3
+   filter itertools.ifilter
+   input raw_input
+   map itertools.imap
+   range xrange
+   zip itertools.izip)
+ (def
+   remove itertools.filterfalse
+   zip-longest itertools.zip_longest
+   ;; was builtin in Python2
+   reduce functools.reduce
+   ;; Someone can import these directly from `hy.core.language`;
+   ;; we'll make some duplicates.
+   filter filter
+   input input
+   map map
+   range range
+   zip zip))
+
+;; infinite iterators
+(def
+  count itertools.count
+  cycle itertools.cycle
+  repeat itertools.repeat)
+
+;; shortest-terminating iterators
+(def
+  *map itertools.starmap
+  chain itertools.chain
+  compress itertools.compress
+  drop-while itertools.dropwhile
+  group-by itertools.groupby
+  islice itertools.islice
+  take-while itertools.takewhile
+  tee itertools.tee)
+
+;; combinatoric iterators
+(def
+  combinations itertools.combinations
+  multicombinations itertools.combinations_with_replacement
+  permutations itertools.permutations
+  product itertools.product)
+
+;; also from itertools, but not in Python2, and without func option until 3.3
+(defn accumulate [iterable &optional [func operator.add]]
+  "accumulate(iterable[, func]) --> accumulate object
+
+   Return series of accumulated sums (or other binary function results)."
+  (setv it (iter iterable)
+        total (next it))
+  (yield total)
+  (for* [element it]
+    (setv total (func total element))
+    (yield total)))
 
 (defn drop [count coll]
   "Drop `count` elements from `coll` and yield back the rest"
-  (let [[citer (iter coll)]]
-    (try (for* [i (range count)]
-           (next citer))
-         (catch [StopIteration]))
-    citer))
+  (islice coll count nil))
 
-(defn drop-while [pred coll]
-  "Drop all elements of `coll` until `pred` is False"
-  (let [[citer (iter coll)]]
-    (for* [val citer]
-      (if (not (pred val))
-        (do (yield val) (break))))
-    (for* [val citer]
-      (yield val))))
+(defn drop-last [n coll]
+  "Return a sequence of all but the last n elements in coll."
+  (let [iters (tee coll)]
+    (map first (apply zip [(get iters 0)
+                           (drop n (get iters 1))]))))
 
 (defn empty? [coll]
   "Return True if `coll` is empty"
@@ -114,19 +179,12 @@
 
 (defn fake-source-positions [tree]
   "Fake the source positions for a given tree"
-  (if (and (iterable? tree) (not (string? tree)))
+  (if (coll? tree)
     (for* [subtree tree]
           (fake-source-positions subtree)))
   (for* [attr '[start-line end-line start-column end-column]]
         (if (not (hasattr tree attr))
           (setattr tree attr 1))))
-
-(defn filter [pred coll]
-  "Return all elements from `coll` that pass `pred`"
-  (let [[citer (iter coll)]]
-    (for* [val citer]
-      (if (pred val)
-        (yield val)))))
 
 (defn flatten [coll]
   "Return a single flat list expanding all members of coll"
@@ -135,7 +193,7 @@
     (raise (TypeError (.format "{0!r} is not a collection" coll)))))
 
 (defn _flatten [coll result]
-  (if (and (iterable? coll) (not (string? coll)))
+  (if (coll? coll)
     (do (for* [b coll]
           (_flatten b result)))
     (.append result coll))
@@ -145,12 +203,16 @@
   "Return True if x is float"
   (isinstance x float))
 
+(defn symbol? [s]
+  "Check whether s is a symbol"
+  (instance? HySymbol s))
+
 (import [threading [Lock]])
 (setv _gensym_counter 1234)
 (setv _gensym_lock (Lock))
 
 (defn gensym [&optional [g "G"]]
-  (let [[new_symbol None]]
+  (let [new_symbol None]
     (global _gensym_counter)
     (global _gensym_lock)
     (.acquire _gensym_lock)
@@ -169,7 +231,7 @@
 
 (defn first [coll]
   "Return first item from `coll`"
-  (get coll 0))
+  (next (iter coll) nil))
 
 (defn identity [x]
   "Returns the argument unchanged"
@@ -194,14 +256,21 @@
 (defn integer-char? [x]
   "Return True if char `x` parses as an integer"
   (try
-   (integer? (int x))
-   (catch [e ValueError] False)
-   (catch [e TypeError] False)))
+    (integer? (int x))
+    (except [e ValueError] False)
+    (except [e TypeError] False)))
+
+(defn interleave [&rest seqs]
+  "Return an iterable of the first item in each of seqs, then the second etc."
+  (chain.from-iterable (apply zip seqs)))
+
+(defn interpose [item seq]
+  "Return an iterable of the elements of seq separated by item"
+  (drop 1 (interleave (repeat item) seq)))
 
 (defn iterable? [x]
   "Return true if x is iterable"
-  (try (do (iter x) true)
-       (catch [Exception] false)))
+  (isinstance x collections.Iterable))
 
 (defn iterate [f x]
   (setv val x)
@@ -211,8 +280,11 @@
 
 (defn iterator? [x]
   "Return true if x is an iterator"
-  (try (= x (iter x))
-       (catch [TypeError] false)))
+  (isinstance x collections.Iterator))
+
+(defn last [coll]
+  "Return last item from `coll`"
+  (get (tuple coll) -1))
 
 (defn list* [hd &rest tl]
   "Return a dotted list construed from the elements of the argument"
@@ -225,14 +297,31 @@
   (import hy.macros)
 
   (setv name (calling-module-name))
-  (hy.macros.macroexpand form name))
+  (hy.macros.macroexpand form (HyASTCompiler name)))
 
 (defn macroexpand-1 [form]
   "Return the single step macro expansion of form"
   (import hy.macros)
 
   (setv name (calling-module-name))
-  (hy.macros.macroexpand-1 form name))
+  (hy.macros.macroexpand-1 form (HyASTCompiler name)))
+
+(defn merge-with [f &rest maps]
+  "Returns a map that consists of the rest of the maps joined onto
+   the first. If a key occurs in more than one map, the mapping(s)
+   from the latter (left-to-right) will be combined with the mapping in
+   the result by calling (f val-in-result val-in-latter)."
+  (if (any maps)
+    (let [merge-entry (fn [m e]
+                        (let [k (get e 0)
+                              v (get e 1)]
+                        (if (in k m)
+                          (assoc m k (f (get m k) v))
+                          (assoc m k v)))
+          m)
+      merge2 (fn [m1 m2]
+               (reduce merge-entry (.items m2) (or m1 {})))]
+    (reduce merge2 maps))))
 
 (defn neg? [n]
   "Return true if n is < 0"
@@ -251,43 +340,36 @@
   (import numbers)
   (instance? numbers.Number x))
 
-(defn nth [coll index]
-  "Return nth item in collection or sequence, counting from 0"
-  (if (not (neg? index))
-    (if (iterable? coll)
-      (try (get (list (take 1 (drop index coll))) 0)
-           (catch [IndexError] None))
-      (try (get coll index)
-           (catch [IndexError] None)))
-    None))
+(defn nth [coll n &optional [default nil]]
+  "Return nth item in collection or sequence, counting from 0.
+   Return nil if out of bounds unless specified otherwise."
+  (next (drop n coll) default))
 
 (defn odd? [n]
   "Return true if n is an odd number"
   (_numeric-check n)
   (= (% n 2) 1))
 
+(def -sentinel (object))
+(defn partition [coll &optional [n 2] step [fillvalue -sentinel]]
+  "Chunks coll into n-tuples (pairs by default). The remainder, if any, is not
+   included unless a fillvalue is specified. The step defaults to n, but can be
+   more to skip elements, or less for a sliding window with overlap."
+  (setv
+   step (or step n)
+   slices (genexpr (itertools.islice coll start nil step) [start (range n)]))
+  (if (is fillvalue -sentinel)
+    (apply zip slices)
+    (apply zip-longest slices {"fillvalue" fillvalue})))
+
 (defn pos? [n]
   "Return true if n is > 0"
   (_numeric_check n)
   (> n 0))
 
-(defn remove [pred coll]
-  "Return coll with elements removed that pass `pred`"
-  (let [[citer (iter coll)]]
-    (for* [val citer]
-      (if (not (pred val))
-        (yield val)))))
-
 (defn rest [coll]
   "Get all the elements of a coll, except the first."
-  (slice coll 1))
-
-(defn repeat [x &optional n]
-  "Yield x forever or optionally n times"
-  (if (none? n)
-    (setv dispatch (fn [] (while true (yield x))))
-    (setv dispatch (fn [] (for* [_ (range n)] (yield x)))))
-  (dispatch))
+  (drop 1 coll))
 
 (defn repeatedly [func]
   "Yield result of running func repeatedly"
@@ -296,11 +378,11 @@
 
 (defn second [coll]
   "Return second item from `coll`"
-  (get coll 1))
+  (nth coll 1))
 
 (defn some [pred coll]
-  "Return true if (pred x) is logical true for any x in coll, else false"
-  (any (map pred coll)))
+  "Return the first logical true value of (pred x) for any x in coll, else nil"
+  (first (filter nil (map pred coll))))
 
 (defn string [x]
   "Cast x as current string implementation"
@@ -317,44 +399,83 @@
 (defn take [count coll]
   "Take `count` elements from `coll`, or the whole set if the total
     number of entries in `coll` is less than `count`."
-  (let [[citer (iter coll)]]
-    (for* [_ (range count)]
-      (yield (next citer)))))
+  (islice coll nil count))
 
 (defn take-nth [n coll]
   "Return every nth member of coll
      raises ValueError for (not (pos? n))"
   (if (pos? n)
-    (let [[citer (iter coll)] [skip (dec n)]]
-      (for* [val citer]
-        (yield val)
-        (for* [_ (range skip)]
-          (next citer))))
-    (raise (ValueError "n must be positive"))))
-
-(defn take-while [pred coll]
-  "Take all elements while `pred` is true"
-  (let [[citer (iter coll)]]
+    (let [citer (iter coll)
+          skip (dec n)]
     (for* [val citer]
-      (if (pred val)
-        (yield val)
-        (break)))))
+      (yield val)
+      (for* [_ (range skip)]
+        (next citer))))
+  (raise (ValueError "n must be positive"))))
 
 (defn zero? [n]
   "Return true if n is 0"
   (_numeric_check n)
   (= n 0))
 
-(defn zipwith [func &rest lists]
-  "Zip the contents of several lists and map a function to the result"
-  (do
-    (import functools)
-    (map (functools.partial (fn [f args] (apply f args)) func) (apply zip lists))))
+(defn read [&optional [from-file sys.stdin]
+                      [eof ""]]
+  "Read from input and returns a tokenized string.
+   Can take a given input buffer to read from"
+  (def buff "")
+  (while true
+    (def inn (str (.readline from-file)))
+    (if (= inn eof)
+      (raise (EOFError "Reached end of file" )))
+    (setv buff (+ buff inn))
+    (try
+      (def parsed (first (tokenize buff)))
+      (except [e [PrematureEndOfInput IndexError]])
+      (else (if parsed (break)))))
+    parsed)
 
-(def *exports* '[calling-module-name coll? cons cons? cycle dec distinct
-                 disassemble drop drop-while empty? even? every? first filter
-                 flatten float? gensym identity inc instance? integer
-                 integer? integer-char? iterable? iterate iterator?
-                 list* macroexpand macroexpand-1 neg? nil? none? nth
-                 numeric? odd? pos? remove repeat repeatedly rest second
-                 some string string? take take-nth take-while zero? zipwith])
+(defn read-str [input]
+  "Reads and tokenizes first line of input"
+  (read :from-file (StringIO input)))
+
+(defn hyify [text]
+  "Convert text to match hy identifier"
+  (.replace (string text) "_" "-"))
+
+(defn keyword [value]
+  "Create a keyword from the given value. Strings numbers and even objects
+  with the __name__ magic will work"
+  (if (and (string? value) (value.startswith *keyword-prefix*))
+    (hyify value)
+    (if (string? value)
+      (HyKeyword (+ ":" (hyify value)))
+      (try
+        (hyify (.__name__ value))
+        (except [] (HyKeyword (+ ":" (string value))))))))
+
+(defn name [value]
+  "Convert the given value to a string. Keyword special character will be stripped.
+  String will be used as is. Even objects with the __name__ magic will work"
+  (if (and (string? value) (value.startswith *keyword-prefix*))
+    (hyify (cut value 2))
+    (if (string? value)
+      (hyify value)
+      (try
+        (hyify (. value __name__))
+        (except [] (string value))))))
+
+(defn xor [a b]
+  "Perform exclusive or between two parameters"
+  (or (and a (not b))
+      (and b (not a))))
+
+(def *exports*
+  '[*map accumulate butlast calling-module-name chain coll? combinations
+    compress cons cons? count cycle dec distinct disassemble drop drop-last
+    drop-while empty? even? every? first filter flatten float? fraction gensym
+    group-by identity inc input instance? integer integer? integer-char?
+    interleave interpose islice iterable? iterate iterator? keyword keyword?
+    last list* macroexpand macroexpand-1 map merge-with multicombinations name
+    neg? nil? none? nth numeric? odd? partition permutations pos? product range
+    read read-str remove repeat repeatedly rest reduce second some string
+    string? symbol? take take-nth take-while xor tee zero? zip zip-longest])

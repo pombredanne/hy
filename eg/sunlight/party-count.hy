@@ -1,6 +1,6 @@
 #!/usr/bin/env hy
 ;; Copyright (c) Paul R. Tagliamonte <paultag@debian.org>, 2013 under the terms
-;; of the Expat license, a copy of which you have should have recieved with
+;; of the Expat license, a copy of which you should have received with
 ;; the source.
 
 (import sys)
@@ -12,7 +12,7 @@
 
 
 (defn get-legislators [state]
-  (kwapply (.legislators openstates) {"state" state}))
+  (apply openstates.legislators [] {"state" state}))
 
 
 (defn get-party-breakdown [state]

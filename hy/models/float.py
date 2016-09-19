@@ -18,15 +18,17 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-from hy.models import HyObject
+from hy.models import HyObject, _wrappers
 
 
 class HyFloat(HyObject, float):
     """
-    Internal represntation of a Hy Float. May raise a ValueError as if
+    Internal representation of a Hy Float. May raise a ValueError as if
     float(foo) was called, given HyFloat(foo).
     """
 
     def __new__(cls, number, *args, **kwargs):
         number = float(number)
         return super(HyFloat, cls).__new__(cls, number)
+
+_wrappers[float] = HyFloat

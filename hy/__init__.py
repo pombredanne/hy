@@ -23,7 +23,6 @@ from hy.version import __version__, __appname__  # NOQA
 
 
 from hy.models.expression import HyExpression  # NOQA
-from hy.models.lambdalist import HyLambdaListKeyword  # NOQA
 from hy.models.integer import HyInteger  # NOQA
 from hy.models.keyword import HyKeyword  # NOQA
 from hy.models.complex import HyComplex  # NOQA
@@ -32,6 +31,7 @@ from hy.models.symbol import HySymbol  # NOQA
 from hy.models.float import HyFloat  # NOQA
 from hy.models.dict import HyDict  # NOQA
 from hy.models.list import HyList  # NOQA
+from hy.models.set import HySet  # NOQA
 from hy.models.cons import HyCons  # NOQA
 
 

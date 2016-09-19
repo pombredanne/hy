@@ -21,55 +21,17 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-from hy._compat import PY3
-
 import traceback
+
+from clint.textui import colored
 
 
 class HyError(Exception):
     """
-    Generic Hy error. All interal Exceptions will be subclassed from this
+    Generic Hy error. All internal Exceptions will be subclassed from this
     Exception.
     """
     pass
-
-
-try:
-    from clint.textui import colored
-except Exception:
-    class colored:
-
-        @staticmethod
-        def black(foo):
-            return foo
-
-        @staticmethod
-        def red(foo):
-            return foo
-
-        @staticmethod
-        def green(foo):
-            return foo
-
-        @staticmethod
-        def yellow(foo):
-            return foo
-
-        @staticmethod
-        def blue(foo):
-            return foo
-
-        @staticmethod
-        def magenta(foo):
-            return foo
-
-        @staticmethod
-        def cyan(foo):
-            return foo
-
-        @staticmethod
-        def white(foo):
-            return foo
 
 
 class HyCompileError(HyError):
@@ -137,13 +99,18 @@ class HyTypeError(TypeError):
 
         result += colored.yellow("%s: %s\n\n" %
                                  (self.__class__.__name__,
-                                  self.message))
+                                  self.message.encode('utf-8')))
 
-        if not PY3:
-            return result.encode('utf-8')
-        else:
-            return result
+        return result
 
 
 class HyMacroExpansionError(HyTypeError):
+    pass
+
+
+class HyIOError(HyError, IOError):
+    """
+    Trivial subclass of IOError and HyError, to distinguish between
+    IOErrors raised by Hy itself as opposed to Hy programs.
+    """
     pass

@@ -1,5 +1,5 @@
 # Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-# Copyright (c) 2013 Bob Tolbert <bob@tolbert.org>
+# Copyright (c) 2013, 2014 Bob Tolbert <bob@tolbert.org>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -20,8 +20,9 @@
 # DEALINGS IN THE SOFTWARE.
 
 from hy.compiler import hy_compile, HyTypeError
-from hy.models import HyObject
+from hy.models import HyObject, replace_hy_obj
 from hy.lex import tokenize, LexException
+from hy.errors import HyIOError
 
 from io import open
 import marshal
@@ -32,6 +33,7 @@ import os
 import __future__
 
 from hy._compat import PY3, PY33, MAGIC, builtins, long_type, wr_long
+from hy._compat import string_types
 
 
 def ast_compile(ast, filename, mode):
@@ -43,14 +45,17 @@ def ast_compile(ast, filename, mode):
 
 
 def import_buffer_to_hst(buf):
-    """Import content from buf and return an Hy AST."""
+    """Import content from buf and return a Hy AST."""
     return tokenize(buf + "\n")
 
 
 def import_file_to_hst(fpath):
-    """Import content from fpath and return an Hy AST."""
-    with open(fpath, 'r', encoding='utf-8') as f:
-        return import_buffer_to_hst(f.read())
+    """Import content from fpath and return a Hy AST."""
+    try:
+        with open(fpath, 'r', encoding='utf-8') as f:
+            return import_buffer_to_hst(f.read())
+    except IOError as e:
+        raise HyIOError(e.errno, e.strerror, e.filename)
 
 
 def import_buffer_to_ast(buf, module_name):
@@ -103,7 +108,11 @@ def hy_eval(hytree, namespace, module_name):
     foo.end_line = 0
     foo.start_column = 0
     foo.end_column = 0
-    hytree.replace(foo)
+    replace_hy_obj(hytree, foo)
+
+    if not isinstance(module_name, string_types):
+        raise HyTypeError(foo, "Module name must be a string")
+
     _ast, expr = hy_compile(hytree, module_name, get_expr=True)
 
     # Spoof the positions in the generated ast...
@@ -114,6 +123,9 @@ def hy_eval(hytree, namespace, module_name):
     for node in ast.walk(expr):
         node.lineno = 1
         node.col_offset = 1
+
+    if not isinstance(namespace, dict):
+        raise HyTypeError(foo, "Globals must be a dictionary")
 
     # Two-step eval: eval() the body of the exec call
     eval(ast_compile(_ast, "<eval_body>", "exec"), namespace)
@@ -209,5 +221,5 @@ class MetaImporter(object):
             return MetaLoader(path)
 
 
-sys.meta_path.append(MetaImporter())
+sys.meta_path.insert(0, MetaImporter())
 sys.path.insert(0, "")

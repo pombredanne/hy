@@ -18,15 +18,17 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-from hy.models import HyObject
+from hy.models import HyObject, _wrappers
 
 
 class HyComplex(HyObject, complex):
     """
-    Internal represntation of a Hy Complex. May raise a ValueError as if
+    Internal representation of a Hy Complex. May raise a ValueError as if
     complex(foo) was called, given HyComplex(foo).
     """
 
     def __new__(cls, number, *args, **kwargs):
         number = complex(number)
         return super(HyComplex, cls).__new__(cls, number)
+
+_wrappers[complex] = HyComplex

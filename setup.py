@@ -45,12 +45,12 @@ long_description = """Hy is a Python <--> Lisp layer. It helps
 make things work nicer, and lets Python and the Hy lisp variant play
 nice together. """
 
-install_requires = ['rply>=0.7.0', 'astor>=0.3']
+install_requires = ['rply>=0.7.0', 'astor>=0.5', 'clint>=0.4']
 if sys.version_info[:2] < (2, 7):
     install_requires.append('argparse>=1.2.1')
     install_requires.append('importlib>=1.0.2')
 if os.name == 'nt':
-    install_requires.append('pyreadline==2.0')
+    install_requires.append('pyreadline>=2.1')
 
 setup(
     name=PKG,
@@ -59,7 +59,8 @@ setup(
     entry_points={
         'console_scripts': [
             'hy = hy.cmdline:hy_main',
-            'hyc = hy.cmdline:hyc_main'
+            'hyc = hy.cmdline:hyc_main',
+            'hy2py = hy.cmdline:hy2py_main',
         ]
     },
     packages=find_packages(exclude=['tests*']),
@@ -86,8 +87,9 @@ setup(
         "Programming Language :: Python :: 2.6",
         "Programming Language :: Python :: 2.7",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.2",
         "Programming Language :: Python :: 3.3",
+        "Programming Language :: Python :: 3.4",
+        "Programming Language :: Python :: 3.5",
         "Topic :: Software Development :: Code Generators",
         "Topic :: Software Development :: Compilers",
         "Topic :: Software Development :: Libraries",

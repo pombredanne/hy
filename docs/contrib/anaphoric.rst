@@ -11,27 +11,27 @@ concise and easy to read.
     deliberately captures some form supplied to the macro which may be
     referred to by an anaphor (an expression referring to another).
 
-    -- Wikipedia (http://en.wikipedia.org/wiki/Anaphoric_macro)
+    -- Wikipedia (https://en.wikipedia.org/wiki/Anaphoric_macro)
 
-Macros
-======
+To use these macros you need to require the hy.contrib.anaphoric module like so:
 
+``(require hy.contrib.anaphoric)``
 
 .. _ap-if:
 
 ap-if
--------
+=====
 
 Usage: ``(ap-if (foo) (print it))``
 
-Evaluate the first form for trutheyness, and bind it to ``it`` in both the
-true and false branch.
+Evaluates the first form for truthiness, and bind it to ``it`` in both the
+true and false branches.
 
 
 .. _ap-each:
 
 ap-each
--------
+=======
 
 Usage: ``(ap-each [1 2 3 4 5] (print it))``
 
@@ -46,9 +46,9 @@ ap-each-while
 Usage: ``(ap-each-while list pred body)``
 
 Evaluate the form for each element where the predicate form returns
-True.
+``True``.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    => (ap-each-while [1 2 3 4 5 6] (< it 4) (print it))
    1
@@ -63,10 +63,10 @@ ap-map
 Usage: ``(ap-map form list)``
 
 The anaphoric form of map works just like regular map except that
-instead of a function object it takes a Hy form. The special name,
+instead of a function object it takes a Hy form. The special name
 ``it`` is bound to the current object from the list in the iteration.
 
-.. code-block:: clojure
+.. code-block:: hy
 
     => (list (ap-map (* it 2) [1 2 3]))
     [2, 4, 6]
@@ -82,7 +82,7 @@ Usage: ``(ap-map-when predfn rep list)``
 Evaluate a mapping over the list using a predicate function to
 determin when to apply the form.
 
-.. code-block:: clojure
+.. code-block:: hy
 
     => (list (ap-map-when odd? (* it 2) [1 2 3 4]))
     [2, 2, 6, 4]
@@ -102,7 +102,7 @@ As with ``ap-map`` we take a special form instead of a function to
 filter the elements of the list. The special name ``it`` is bound to
 the current element in the iteration.
 
-.. code-block:: clojure
+.. code-block:: hy
 
     => (list (ap-filter (> (* it 2) 6) [1 2 3 4 5]))
     [4, 5]
@@ -119,7 +119,7 @@ This function does the opposite of ``ap-filter``, it rejects the
 elements passing the predicate . The special name ``it`` is bound to
 the current element in the iteration.
 
-.. code-block:: clojure
+.. code-block:: hy
 
     => (list (ap-reject (> (* it 2) 6) [1 2 3 4 5]))
     [1, 2, 3]
@@ -135,7 +135,7 @@ Usage ``(ap-dotimes n body)``
 This function evaluates the body *n* times, with the special
 variable ``it`` bound from *0* to *1-n*. It is useful for side-effects.
 
-.. code-block:: clojure
+.. code-block:: hy
 
     => (setv n [])
     => (ap-dotimes 3 (.append n it))
@@ -154,7 +154,7 @@ This function returns the first element that passes the predicate or
 ``None``, with the special variable ``it`` bound to the current element in
 iteration.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    =>(ap-first (> it 5) (range 10))
    6
@@ -171,7 +171,7 @@ This function returns the last element that passes the predicate or
 ``None``, with the special variable ``it`` bound to the current element in
 iteration.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    =>(ap-last (> it 5) (range 10))
    9
@@ -191,7 +191,59 @@ supplied so the function will be applied to initial value and the
 first element instead. This exposes the element being iterated as
 ``it`` and the current accumulated value as ``acc``.
 
-.. code-block:: clojure
+.. code-block:: hy
 
    =>(ap-reduce (+ it acc) (range 10))
    45
+
+
+.. _ap-pipe:
+
+ap-pipe
+=========
+
+Usage ``(ap-pipe value form1 form2 ...)``
+
+Applies several forms in series to a value from left to right. The special variable ``ìt`` in each form is replaced by the result of the previous form.
+
+.. code-block:: hy
+
+   => (ap-pipe 3 (+ it 1) (/ 5 it))
+   1.25
+   => (ap-pipe [4 5 6 7] (list (rest it)) (len it))
+   3
+
+
+.. _ap-compose:
+
+ap-compose
+=========
+
+Usage ``(ap-compose form1 form2 ...)``
+
+Returns a function which applies several forms in series from left to right. The special variable ``ìt`` in each form is replaced by the result of the previous form.
+
+.. code-block:: hy
+
+   => (def op (ap-compose (+ it 1) (* it 3)))
+   => (op 2)
+   9
+
+.. _xi
+
+xi
+==
+
+Usage ``(xi body ...)``
+
+Returns a function with parameters implicitly determined by the presence in the body of xi parameters. An xi symbol designates the ith parameter (1-based, e.g. x1, x2, x3, etc.), or all remaining parameters for xi itself. This is not a replacement for lambda. The xi forms cannot be nested.
+
+This is similar to Clojure's anonymous function literals (``#()``).
+
+.. code-block:: hy
+
+   => ((xi identity [x1 x5 [x2 x3] xi x4]) 1 2 3 4 5 6 7 8)
+   [1, 5, [2, 3,] (6, 7, 8), 4]
+   => (def add-10 (xi + 10 x1))
+   => (add-10 6)
+   16

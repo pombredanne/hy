@@ -1,10 +1,10 @@
 # -*- encoding: utf-8 -*-
 #
-# Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
+# Copyright (c) 2013, 2014 Paul Tagliamonte <paultag@debian.org>
 # Copyright (c) 2013 Julien Danjou <julien@danjou.info>
 # Copyright (c) 2013 Nicolas Dandrimont <nicolas.dandrimont@crans.org>
 # Copyright (c) 2013 James King <james@agentultra.com>
-# Copyright (c) 2013 Bob Tolbert <bob@tolbert.org>
+# Copyright (c) 2013, 2014 Bob Tolbert <bob@tolbert.org>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -24,7 +24,6 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-from hy.models.lambdalist import HyLambdaListKeyword
 from hy.models.expression import HyExpression
 from hy.models.keyword import HyKeyword
 from hy.models.integer import HyInteger
@@ -33,13 +32,17 @@ from hy.models.string import HyString
 from hy.models.symbol import HySymbol
 from hy.models.float import HyFloat
 from hy.models.list import HyList
+from hy.models.set import HySet
 from hy.models.dict import HyDict
 from hy.models.cons import HyCons
 
 from hy.errors import HyCompileError, HyTypeError
 
+from hy.lex.parser import hy_symbol_mangle
+
 import hy.macros
-from hy._compat import str_type, long_type, PY27, PY33, PY3, PY34
+from hy._compat import (
+    str_type, long_type, PY27, PY33, PY3, PY34, PY35, raise_empty)
 from hy.macros import require, macroexpand, reader_macroexpand
 import hy.importer
 
@@ -48,6 +51,7 @@ import importlib
 import codecs
 import ast
 import sys
+import keyword
 
 from collections import defaultdict
 
@@ -74,6 +78,21 @@ def load_stdlib():
             _stdlib[e] = module
 
 
+# True, False and None included here since they
+# are assignable in Python 2.* but become
+# keywords in Python 3.*
+def _is_hy_builtin(name, module_name):
+    extras = ['True', 'False', 'None',
+              'true', 'false', 'nil']
+    if name in extras or keyword.iskeyword(name):
+        return True
+    # for non-Hy modules, check for pre-existing name in
+    # _compile_table
+    if not module_name.startswith("hy."):
+        return name in _compile_table
+    return False
+
+
 _compile_table = {}
 
 
@@ -97,13 +116,20 @@ def builds(_type):
     really_ok = ["-"]
     if any(x in unpythonic_chars for x in str_type(_type)):
         if _type not in really_ok:
-            raise TypeError("`build' needs to be *post* translated strings, "
-                            "Mr. / Mrs. Hypser. -- `%s' sucks." % (_type))
+            raise TypeError("Dear Hypster: `build' needs to be *post* "
+                            "translated strings... `%s' sucks." % (_type))
 
     def _dec(fn):
         _compile_table[_type] = fn
         return fn
     return _dec
+
+
+def builds_if(_type, condition):
+    if condition:
+        return builds(_type)
+    else:
+        return lambda fn: fn
 
 
 class Result(object):
@@ -305,13 +331,12 @@ def _raise_wrong_args_number(expression, error):
                                len(expression)))
 
 
-def checkargs(exact=None, min=None, max=None, even=None):
+def checkargs(exact=None, min=None, max=None, even=None, multiple=None):
     def _dec(fn):
         def checker(self, expression):
             if exact is not None and (len(expression) - 1) != exact:
                 _raise_wrong_args_number(
                     expression, "`%%s' needs %d arguments, got %%d" % exact)
-
             if min is not None and (len(expression) - 1) < min:
                 _raise_wrong_args_number(
                     expression,
@@ -330,6 +355,14 @@ def checkargs(exact=None, min=None, max=None, even=None):
                     "`%%s' needs an %s number of arguments, got %%d"
                     % (even_str))
 
+            if multiple is not None:
+                if not (len(expression) - 1) in multiple:
+                    choices = ", ".join([str(val) for val in multiple[:-1]])
+                    choices += " or %s" % multiple[-1]
+                    _raise_wrong_args_number(
+                        expression,
+                        "`%%s' needs %s arguments, got %%d" % choices)
+
             return fn(self, expression)
 
         return checker
@@ -339,10 +372,12 @@ def checkargs(exact=None, min=None, max=None, even=None):
 class HyASTCompiler(object):
 
     def __init__(self, module_name):
+        self.allow_builtins = False
         self.anon_fn_count = 0
         self.anon_var_count = 0
         self.imports = defaultdict(set)
         self.module_name = module_name
+        self.temp_if = None
         if not module_name.startswith("hy.core"):
             # everything in core needs to be explicit.
             load_stdlib()
@@ -407,11 +442,11 @@ class HyASTCompiler(object):
         except HyTypeError as e:
             raise
         except Exception as e:
-            raise HyCompileError(e, sys.exc_info()[2])
+            raise_empty(HyCompileError, e, sys.exc_info()[2])
 
         raise HyCompileError(Exception("Unknown type: `%s'" % _type))
 
-    def _compile_collect(self, exprs):
+    def _compile_collect(self, exprs, with_kwargs=False):
         """Collect the expression contexts from a list of compiled expression.
 
         This returns a list of the expression contexts, and the sum of the
@@ -420,29 +455,54 @@ class HyASTCompiler(object):
         """
         compiled_exprs = []
         ret = Result()
-        for expr in exprs:
-            ret += self.compile(expr)
-            compiled_exprs.append(ret.force_expr)
-        return compiled_exprs, ret
+        keywords = []
+
+        exprs_iter = iter(exprs)
+        for expr in exprs_iter:
+            if with_kwargs and isinstance(expr, HyKeyword):
+                try:
+                    value = next(exprs_iter)
+                except StopIteration:
+                    raise HyTypeError(expr,
+                                      "Keyword argument {kw} needs "
+                                      "a value.".format(kw=str(expr[1:])))
+
+                compiled_value = self.compile(value)
+                ret += compiled_value
+
+                # no unicode for py2 in ast names
+                keyword = str(expr[2:])
+                if "-" in keyword and keyword != "-":
+                    keyword = keyword.replace("-", "_")
+
+                keywords.append(ast.keyword(arg=keyword,
+                                            value=compiled_value.force_expr,
+                                            lineno=expr.start_line,
+                                            col_offset=expr.start_column))
+            else:
+                ret += self.compile(expr)
+                compiled_exprs.append(ret.force_expr)
+
+        return compiled_exprs, ret, keywords
 
     def _compile_branch(self, exprs):
         return _branch(self.compile(expr) for expr in exprs)
 
     def _parse_lambda_list(self, exprs):
         """ Return FunctionDef parameter values from lambda list."""
+        ll_keywords = ("&rest", "&optional", "&key", "&kwonly", "&kwargs")
         ret = Result()
         args = []
         defaults = []
         varargs = None
+        kwonlyargs = []
+        kwonlydefaults = []
         kwargs = None
         lambda_keyword = None
 
         for expr in exprs:
 
-            if isinstance(expr, HyLambdaListKeyword):
-                if expr not in expr._valid_types:
-                    raise HyTypeError(expr, "{0} is not a valid "
-                                      "lambda-keyword.".format(repr(expr)))
+            if expr in ll_keywords:
                 if expr == "&rest" and lambda_keyword is None:
                     lambda_keyword = expr
                 elif expr == "&optional":
@@ -452,6 +512,8 @@ class HyASTCompiler(object):
                                           "arguments or one &key argument")
                     lambda_keyword = expr
                 elif expr == "&key":
+                    lambda_keyword = expr
+                elif expr == "&kwonly":
                     lambda_keyword = expr
                 elif expr == "&kwargs":
                     lambda_keyword = expr
@@ -470,7 +532,7 @@ class HyASTCompiler(object):
                     raise HyTypeError(expr,
                                       "There can only be one "
                                       "&rest argument")
-                varargs = str(expr)
+                varargs = expr
             elif lambda_keyword == "&key":
                 if type(expr) != HyDict:
                     raise HyTypeError(expr,
@@ -485,6 +547,10 @@ class HyASTCompiler(object):
                     # defining keyword arguments.
                     it = iter(expr)
                     for k, v in zip(it, it):
+                        if not isinstance(k, HyString):
+                            raise HyTypeError(expr,
+                                              "Only strings can be used "
+                                              "as parameter names")
                         args.append(k)
                         ret += self.compile(v)
                         defaults.append(ret.force_expr)
@@ -498,33 +564,56 @@ class HyASTCompiler(object):
                 else:
                     k = expr
                     v = HySymbol("None").replace(k)
+                if not isinstance(k, HyString):
+                    raise HyTypeError(expr,
+                                      "Only strings can be used as "
+                                      "parameter names")
                 args.append(k)
                 ret += self.compile(v)
                 defaults.append(ret.force_expr)
+            elif lambda_keyword == "&kwonly":
+                if not PY3:
+                    raise HyTypeError(expr,
+                                      "keyword-only arguments are only "
+                                      "available under Python 3")
+                if isinstance(expr, HyList):
+                    if len(expr) != 2:
+                        raise HyTypeError(expr,
+                                          "keyword-only args should be bare "
+                                          "names or 2-item lists")
+                    k, v = expr
+                    kwonlyargs.append(k)
+                    ret += self.compile(v)
+                    kwonlydefaults.append(ret.force_expr)
+                else:
+                    k = expr
+                    kwonlyargs.append(k)
+                    kwonlydefaults.append(None)
             elif lambda_keyword == "&kwargs":
                 if kwargs:
                     raise HyTypeError(expr,
                                       "There can only be one "
                                       "&kwargs argument")
-                kwargs = str(expr)
+                kwargs = expr
 
-        return ret, args, defaults, varargs, kwargs
+        return ret, args, defaults, varargs, kwonlyargs, kwonlydefaults, kwargs
 
-    def _storeize(self, name, func=None):
+    def _storeize(self, expr, name, func=None):
         """Return a new `name` object with an ast.Store() context"""
         if not func:
             func = ast.Store
 
         if isinstance(name, Result):
             if not name.is_expr():
-                raise TypeError("Can't assign / delete a non-expression")
+                raise HyTypeError(expr,
+                                  "Can't assign or delete a non-expression")
             name = name.expr
 
         if isinstance(name, (ast.Tuple, ast.List)):
             typ = type(name)
             new_elts = []
             for x in name.elts:
-                new_elts.append(self._storeize(x, func))
+                new_elts.append(self._storeize(expr, x, func))
             new_name = typ(elts=new_elts)
         elif isinstance(name, ast.Name):
             new_name = ast.Name(id=name.id, arg=name.arg)
@@ -533,7 +622,9 @@ class HyASTCompiler(object):
         elif isinstance(name, ast.Attribute):
             new_name = ast.Attribute(value=name.value, attr=name.attr)
         else:
-            raise TypeError("Can't assign / delete a %s object" % type(name))
+            raise HyTypeError(expr,
+                              "Can't assign or delete a %s" %
+                              type(expr).__name__)
 
         new_name.ctx = func()
         ast.copy_location(new_name, name)
@@ -576,7 +667,7 @@ class HyASTCompiler(object):
         name = form.__class__.__name__
         imports = set([name])
 
-        if isinstance(form, (HyList, HyDict)):
+        if isinstance(form, (HyList, HyDict, HySet)):
             if not form:
                 contents = HyList()
             else:
@@ -616,7 +707,7 @@ class HyASTCompiler(object):
 
             return imports, ret.replace(form), False
 
-        elif isinstance(form, (HySymbol, HyLambdaListKeyword)):
+        elif isinstance(form, HySymbol):
             return imports, HyExpression([HySymbol(name),
                                           HyString(form)]).replace(form), False
 
@@ -644,33 +735,51 @@ class HyASTCompiler(object):
                           "`%s' can't be used at the top-level" % expr[0])
 
     @builds("eval")
-    @checkargs(exact=1)
+    @checkargs(min=1, max=3)
     def compile_eval(self, expr):
         expr.pop(0)
 
-        ret = self.compile(HyExpression(
-            [HySymbol("hy_eval")] + expr + [HyExpression([HySymbol("locals")])]
-            + [HyString(self.module_name)]).replace(expr)
-        )
+        if not isinstance(expr[0], (HyExpression, HySymbol)):
+            raise HyTypeError(expr, "expression expected as first argument")
+
+        elist = [HySymbol("hy_eval")] + [expr[0]]
+        if len(expr) >= 2:
+            elist.append(expr[1])
+        else:
+            elist.append(HyExpression([HySymbol("locals")]))
+
+        if len(expr) == 3:
+            elist.append(expr[2])
+        else:
+            elist.append(HyString(self.module_name))
+
+        ret = self.compile(HyExpression(elist).replace(expr))
 
         ret.add_imports("hy.importer", ["hy_eval"])
 
         return ret
 
     @builds("do")
-    @builds("progn")
-    def compile_progn(self, expression):
+    def compile_do(self, expression):
         expression.pop(0)
         return self._compile_branch(expression)
 
-    @builds("throw")
     @builds("raise")
-    @checkargs(max=1)
-    def compile_throw_expression(self, expr):
+    @checkargs(multiple=[0, 1, 3])
+    def compile_raise_expression(self, expr):
         expr.pop(0)
         ret = Result()
         if expr:
             ret += self.compile(expr.pop(0))
+
+        cause = None
+        if len(expr) == 2 and expr[0] == HyKeyword(":from"):
+            if not PY3:
+                raise HyCompileError(
+                    "raise from only supported in python 3")
+            expr.pop(0)
+            cause = self.compile(expr.pop(0))
+            cause = cause.expr
 
         # Use ret.expr to get a literal `None`
         ret += ast.Raise(
@@ -680,7 +789,7 @@ class HyASTCompiler(object):
             exc=ret.expr,
             inst=None,
             tback=None,
-            cause=None)
+            cause=cause)
 
         return ret
 
@@ -707,7 +816,8 @@ class HyASTCompiler(object):
                              lineno=expr.start_line,
                              col_offset=expr.start_column)
 
-        returnable = Result(expr=expr_name, temp_variables=[expr_name, name])
+        returnable = Result(expr=expr_name, temp_variables=[expr_name, name],
+                            contains_yield=body.contains_yield)
 
         body += ast.Assign(targets=[name],
                            value=body.force_expr,
@@ -728,29 +838,14 @@ class HyASTCompiler(object):
             if not len(e):
                 raise HyTypeError(e, "Empty list not allowed in `try'")
 
-            if e[0] in (HySymbol("except"), HySymbol("catch")):
+            if e[0] == HySymbol("except"):
                 handler_results += self._compile_catch_expression(e, name)
                 handlers.append(handler_results.stmts.pop())
             elif e[0] == HySymbol("else"):
-                if orelse:
-                    raise HyTypeError(
-                        e,
-                        "`try' cannot have more than one `else'")
-                else:
-                    orelse = self._compile_branch(e[1:])
-                    # XXX tempvar magic
-                    orelse += orelse.expr_as_stmt()
-                    orelse = orelse.stmts
+                orelse = self.try_except_helper(e, HySymbol("else"), orelse)
             elif e[0] == HySymbol("finally"):
-                if finalbody:
-                    raise HyTypeError(
-                        e,
-                        "`try' cannot have more than one `finally'")
-                else:
-                    finalbody = self._compile_branch(e[1:])
-                    # XXX tempvar magic
-                    finalbody += finalbody.expr_as_stmt()
-                    finalbody = finalbody.stmts
+                finalbody = self.try_except_helper(e, HySymbol("finally"),
+                                                   finalbody)
             else:
                 raise HyTypeError(e, "Unknown expression in `try'")
 
@@ -768,8 +863,8 @@ class HyASTCompiler(object):
                 col_offset=expr.start_column,
                 type=None,
                 name=None,
-                body=[ast.Pass(lineno=expr.start_line,
-                               col_offset=expr.start_column)])]
+                body=[ast.Raise(lineno=expr.start_line,
+                                col_offset=expr.start_column)])]
 
         ret = handler_results
 
@@ -809,8 +904,18 @@ class HyASTCompiler(object):
             body=body,
             orelse=orelse) + returnable
 
+    def try_except_helper(self, hy_obj, symbol, accumulated):
+        if accumulated:
+            raise HyTypeError(
+                hy_obj,
+                "`try' cannot have more than one `%s'" % symbol)
+        else:
+            accumulated = self._compile_branch(hy_obj[1:])
+            accumulated += accumulated.expr_as_stmt()
+            accumulated = accumulated.stmts
+        return accumulated
+
     @builds("except")
-    @builds("catch")
     def magic_internal_form(self, expr):
         raise HyTypeError(expr,
                           "Error: `%s' can't be used like that." % (expr[0]))
@@ -859,7 +964,7 @@ class HyASTCompiler(object):
                 name = ast_str(name)
             else:
                 # Python2 requires an ast.Name, set to ctx Store.
-                name = self._storeize(self.compile(name))
+                name = self._storeize(name, self.compile(name))
         else:
             name = None
 
@@ -871,13 +976,13 @@ class HyASTCompiler(object):
         if isinstance(exceptions_list, list):
             if len(exceptions_list):
                 # [FooBar BarFoo] → catch Foobar and BarFoo exceptions
-                elts, _type = self._compile_collect(exceptions_list)
+                elts, _type, _ = self._compile_collect(exceptions_list)
                 _type += ast.Tuple(elts=elts,
                                    lineno=expr.start_line,
                                    col_offset=expr.start_column,
                                    ctx=ast.Load())
             else:
-                # [] → all exceptions catched
+                # [] → all exceptions caught
                 _type = Result()
         elif isinstance(exceptions_list, HySymbol):
             _type = self.compile(exceptions_list)
@@ -905,16 +1010,46 @@ class HyASTCompiler(object):
             name=name,
             body=body)
 
-    @builds("if")
+    @builds("if*")
     @checkargs(min=2, max=3)
     def compile_if(self, expression):
         expression.pop(0)
         cond = self.compile(expression.pop(0))
-
         body = self.compile(expression.pop(0))
+
         orel = Result()
+        nested = root = False
         if expression:
-            orel = self.compile(expression.pop(0))
+            orel_expr = expression.pop(0)
+            if isinstance(orel_expr, HyExpression) and isinstance(orel_expr[0],
+               HySymbol) and orel_expr[0] == 'if*':
+                # Nested ifs: don't waste temporaries
+                root = self.temp_if is None
+                nested = True
+                self.temp_if = self.temp_if or self.get_anon_var()
+            orel = self.compile(orel_expr)
+
+        if not cond.stmts and isinstance(cond.force_expr, ast.Name):
+            name = cond.force_expr.id
+            branch = None
+            if name == 'True':
+                branch = body
+            elif name in ('False', 'None'):
+                branch = orel
+            if branch is not None:
+                if self.temp_if and branch.stmts:
+                    name = ast.Name(id=ast_str(self.temp_if),
+                                    arg=ast_str(self.temp_if),
+                                    ctx=ast.Store(),
+                                    lineno=expression.start_line,
+                                    col_offset=expression.start_column)
+
+                    branch += ast.Assign(targets=[name],
+                                         value=body.force_expr,
+                                         lineno=expression.start_line,
+                                         col_offset=expression.start_column)
+
+                return branch
 
         # We want to hoist the statements from the condition
         ret = cond
@@ -922,7 +1057,7 @@ class HyASTCompiler(object):
         if body.stmts or orel.stmts:
             # We have statements in our bodies
             # Get a temporary variable for the result storage
-            var = self.get_anon_var()
+            var = self.temp_if or self.get_anon_var()
             name = ast.Name(id=ast_str(var), arg=ast_str(var),
                             ctx=ast.Store(),
                             lineno=expression.start_line,
@@ -935,10 +1070,12 @@ class HyASTCompiler(object):
                                col_offset=expression.start_column)
 
             # and of the else clause
-            orel += ast.Assign(targets=[name],
-                               value=orel.force_expr,
-                               lineno=expression.start_line,
-                               col_offset=expression.start_column)
+            if not nested or not orel.stmts or (not root and
+               var != self.temp_if):
+                orel += ast.Assign(targets=[name],
+                                   value=orel.force_expr,
+                                   lineno=expression.start_line,
+                                   col_offset=expression.start_column)
 
             # Then build the if
             ret += ast.If(test=ret.force_expr,
@@ -961,6 +1098,10 @@ class HyASTCompiler(object):
                              orelse=orel.force_expr,
                              lineno=expression.start_line,
                              col_offset=expression.start_column)
+
+        if root:
+            self.temp_if = None
+
         return ret
 
     @builds("break")
@@ -978,30 +1119,88 @@ class HyASTCompiler(object):
         return ret
 
     @builds("assert")
-    @checkargs(1)
+    @checkargs(min=1, max=2)
     def compile_assert_expression(self, expr):
         expr.pop(0)  # assert
         e = expr.pop(0)
+        if len(expr) == 1:
+            msg = self.compile(expr.pop(0)).force_expr
+        else:
+            msg = None
         ret = self.compile(e)
         ret += ast.Assert(test=ret.force_expr,
-                          msg=None,
+                          msg=msg,
                           lineno=e.start_line,
                           col_offset=e.start_column)
 
         return ret
 
     @builds("global")
-    @checkargs(1)
+    @checkargs(min=1)
     def compile_global_expression(self, expr):
         expr.pop(0)  # global
-        e = expr.pop(0)
-        return ast.Global(names=[ast_str(e)],
-                          lineno=e.start_line,
-                          col_offset=e.start_column)
+        names = []
+        while len(expr) > 0:
+            identifier = expr.pop(0)
+            name = ast_str(identifier)
+            names.append(name)
+            if not isinstance(identifier, HySymbol):
+                raise HyTypeError(identifier, "(global) arguments must "
+                                  " be Symbols")
+
+        return ast.Global(names=names,
+                          lineno=expr.start_line,
+                          col_offset=expr.start_column)
+
+    @builds("nonlocal")
+    @checkargs(min=1)
+    def compile_nonlocal_expression(self, expr):
+        if not PY3:
+            raise HyCompileError(
+                "nonlocal only supported in python 3!")
+
+        expr.pop(0)  # nonlocal
+        names = []
+        while len(expr) > 0:
+            identifier = expr.pop(0)
+            name = ast_str(identifier)
+            names.append(name)
+            if not isinstance(identifier, HySymbol):
+                raise HyTypeError(identifier, "(nonlocal) arguments must "
+                                  "be Symbols.")
+
+        return ast.Nonlocal(names=names,
+                            lineno=expr.start_line,
+                            col_offset=expr.start_column)
 
     @builds("yield")
     @checkargs(max=1)
     def compile_yield_expression(self, expr):
+        expr.pop(0)
+        if PY33:
+            ret = Result(contains_yield=False)
+        else:
+            ret = Result(contains_yield=True)
+
+        value = None
+        if expr != []:
+            ret += self.compile(expr.pop(0))
+            value = ret.force_expr
+
+        ret += ast.Yield(
+            value=value,
+            lineno=expr.start_line,
+            col_offset=expr.start_column)
+
+        return ret
+
+    @builds("yield_from")
+    @checkargs(max=1)
+    def compile_yield_from_expression(self, expr):
+        if not PY33:
+            raise HyCompileError(
+                "yield-from only supported in python 3.3+!")
+
         expr.pop(0)
         ret = Result(contains_yield=True)
 
@@ -1010,7 +1209,7 @@ class HyASTCompiler(object):
             ret += self.compile(expr.pop(0))
             value = ret.force_expr
 
-        ret += ast.Yield(
+        ret += ast.YieldFrom(
             value=value,
             lineno=expr.start_line,
             col_offset=expr.start_column)
@@ -1089,7 +1288,7 @@ class HyASTCompiler(object):
         expr.pop(0)  # index
 
         val = self.compile(expr.pop(0))
-        slices, ret = self._compile_collect(expr)
+        slices, ret, _ = self._compile_collect(expr)
 
         if val.stmts:
             ret += val
@@ -1146,23 +1345,31 @@ class HyASTCompiler(object):
         return ret
 
     @builds("del")
-    @checkargs(min=1)
     def compile_del_expression(self, expr):
-        expr.pop(0)
-        ld_targets, ret = self._compile_collect(expr)
+        root = expr.pop(0)
+        if not expr:
+            result = Result()
+            result += ast.Name(id='None', ctx=ast.Load(),
+                               lineno=root.start_line,
+                               col_offset=root.start_column)
+            return result
 
         del_targets = []
-        for target in ld_targets:
-            del_targets.append(self._storeize(target, ast.Del))
+        ret = Result()
+        for target in expr:
+            compiled_target = self.compile(target)
+            ret += compiled_target
+            del_targets.append(self._storeize(target, compiled_target,
+                                              ast.Del))
 
         return ret + ast.Delete(
             lineno=expr.start_line,
             col_offset=expr.start_column,
             targets=del_targets)
 
-    @builds("slice")
+    @builds("cut")
     @checkargs(min=1, max=4)
-    def compile_slice_expression(self, expr):
+    def compile_cut_expression(self, expr):
         expr.pop(0)  # index
         val = self.compile(expr.pop(0))  # target
 
@@ -1217,10 +1424,11 @@ class HyASTCompiler(object):
     def compile_decorate_expression(self, expr):
         expr.pop(0)  # with-decorator
         fn = self.compile(expr.pop(-1))
-        if not fn.stmts or not isinstance(fn.stmts[-1], ast.FunctionDef):
+        if not fn.stmts or not (isinstance(fn.stmts[-1], ast.FunctionDef) or
+                                isinstance(fn.stmts[-1], ast.ClassDef)):
             raise HyTypeError(expr, "Decorated a non-function")
-        decorators, ret = self._compile_collect(expr)
-        fn.stmts[-1].decorator_list = decorators
+        decorators, ret, _ = self._compile_collect(expr)
+        fn.stmts[-1].decorator_list = decorators + fn.stmts[-1].decorator_list
         return ret + fn
 
     @builds("with*")
@@ -1241,7 +1449,7 @@ class HyASTCompiler(object):
 
         thing = None
         if args != []:
-            thing = self._storeize(self.compile(args.pop(0)))
+            thing = self._storeize(args[0], self.compile(args.pop(0)))
 
         body = self._compile_branch(expr)
 
@@ -1281,7 +1489,7 @@ class HyASTCompiler(object):
     @builds(",")
     def compile_tuple(self, expr):
         expr.pop(0)
-        elts, ret = self._compile_collect(expr)
+        elts, ret, _ = self._compile_collect(expr)
         ret += ast.Tuple(elts=elts,
                          lineno=expr.start_line,
                          col_offset=expr.start_column,
@@ -1303,7 +1511,7 @@ class HyASTCompiler(object):
         gen = []
         for target, iterable in paired_gens:
             comp_target = self.compile(target)
-            target = self._storeize(comp_target)
+            target = self._storeize(target, comp_target)
             gen_res += self.compile(iterable)
             gen.append(ast.comprehension(
                 target=target,
@@ -1321,8 +1529,15 @@ class HyASTCompiler(object):
         # (list-comp expr (target iter) cond?)
         expr.pop(0)
         expression = expr.pop(0)
+        gen_gen = expr[0]
+
+        if not isinstance(gen_gen, HyList):
+            raise HyTypeError(gen_gen, "Generator expression must be a list.")
 
         gen_res, gen = self._compile_generator_iterables(expr)
+
+        if len(gen) == 0:
+            raise HyTypeError(gen_gen, "Generator expression cannot be empty.")
 
         compiled_expression = self.compile(expression)
         ret = compiled_expression + gen_res
@@ -1445,7 +1660,7 @@ class HyASTCompiler(object):
 
                 # We then pass the other arguments to the function
                 expr[0] = HyExpression(
-                    [HySymbol("slice"), tempvar, HyInteger(1)]
+                    [HySymbol("cut"), tempvar, HyInteger(1)]
                 ).replace(expr[0])
 
         ret += self.compile(call)
@@ -1465,12 +1680,42 @@ class HyASTCompiler(object):
             stargs = expr.pop(0)
             if stargs is not None:
                 stargs = self.compile(stargs)
-                ret.expr.starargs = stargs.force_expr
+                if PY35:
+                    stargs_expr = stargs.force_expr
+                    ret.expr.args.append(
+                        ast.Starred(stargs_expr, ast.Load(),
+                                    lineno=stargs_expr.lineno,
+                                    col_offset=stargs_expr.col_offset)
+                    )
+                else:
+                    ret.expr.starargs = stargs.force_expr
                 ret = stargs + ret
 
         if expr:
-            kwargs = self.compile(expr.pop(0))
-            ret.expr.kwargs = kwargs.force_expr
+            kwargs = expr.pop(0)
+            if isinstance(kwargs, HyDict):
+                new_kwargs = []
+                for k, v in kwargs.items():
+                    if isinstance(k, HySymbol):
+                        pass
+                    elif isinstance(k, HyString):
+                        k = HyString(hy_symbol_mangle(str_type(k))).replace(k)
+                    elif isinstance(k, HyKeyword):
+                        sym = hy_symbol_mangle(str_type(k)[2:])
+                        k = HyString(sym).replace(k)
+                    new_kwargs += [k, v]
+                kwargs = HyDict(new_kwargs).replace(kwargs)
+
+            kwargs = self.compile(kwargs)
+            if PY35:
+                kwargs_expr = kwargs.force_expr
+                ret.expr.keywords.append(
+                    ast.keyword(None, kwargs_expr,
+                                lineno=kwargs_expr.lineno,
+                                col_offset=kwargs_expr.col_offset)
+                )
+            else:
+                ret.expr.kwargs = kwargs.force_expr
             ret = kwargs + ret
 
         return ret
@@ -1494,7 +1739,7 @@ class HyASTCompiler(object):
     def compile_require(self, expression):
         """
         TODO: keep track of what we've imported in this run and then
-        "unimport" it after we've completed `thing' so that we don't polute
+        "unimport" it after we've completed `thing' so that we don't pollute
         other envs.
         """
         expression.pop(0)
@@ -1505,31 +1750,81 @@ class HyASTCompiler(object):
 
     @builds("and")
     @builds("or")
-    @checkargs(min=2)
     def compile_logical_or_and_and_operator(self, expression):
-        ops = {"and": ast.And,
-               "or": ast.Or}
+        ops = {"and": (ast.And, "True"),
+               "or": (ast.Or, "None")}
         operator = expression.pop(0)
-        values, ret = self._compile_collect(expression)
+        opnode, default = ops[operator]
+        root_line, root_column = operator.start_line, operator.start_column
+        if len(expression) == 0:
+            return ast.Name(id=default,
+                            ctx=ast.Load(),
+                            lineno=root_line,
+                            col_offset=root_column)
+        elif len(expression) == 1:
+            return self.compile(expression[0])
+        ret = Result()
+        values = list(map(self.compile, expression))
+        has_stmt = any(value.stmts for value in values)
+        if has_stmt:
+            # Compile it to an if...else sequence
+            var = self.get_anon_var()
+            name = ast.Name(id=var,
+                            ctx=ast.Store(),
+                            lineno=root_line,
+                            col_offset=root_column)
+            expr_name = ast.Name(id=var,
+                                 ctx=ast.Load(),
+                                 lineno=root_line,
+                                 col_offset=root_column)
 
-        ret += ast.BoolOp(op=ops[operator](),
-                          lineno=operator.start_line,
-                          col_offset=operator.start_column,
-                          values=values)
+            def make_assign(value, node=None):
+                if node is None:
+                    line, column = root_line, root_column
+                else:
+                    line, column = node.lineno, node.col_offset
+                return ast.Assign(targets=[ast.Name(id=var,
+                                                    ctx=ast.Store(),
+                                                    lineno=line,
+                                                    col_offset=column)],
+                                  value=value,
+                                  lineno=line,
+                                  col_offset=column)
+            root = []
+            current = root
+            for i, value in enumerate(values):
+                if value.stmts:
+                    node = value.stmts[0]
+                    current.extend(value.stmts)
+                else:
+                    node = value.expr
+                current.append(make_assign(value.force_expr, value.force_expr))
+                if i == len(values)-1:
+                    # Skip a redundant 'if'.
+                    break
+                if operator == "and":
+                    cond = expr_name
+                elif operator == "or":
+                    cond = ast.UnaryOp(op=ast.Not(),
+                                       operand=expr_name,
+                                       lineno=node.lineno,
+                                       col_offset=node.col_offset)
+                current.append(ast.If(test=cond,
+                                      body=[],
+                                      lineno=node.lineno,
+                                      col_offset=node.col_offset,
+                                      orelse=[]))
+                current = current[-1].body
+            ret = sum(root, ret)
+            ret += Result(expr=expr_name, temp_variables=[expr_name, name])
+        else:
+            ret += ast.BoolOp(op=opnode(),
+                              lineno=root_line,
+                              col_offset=root_column,
+                              values=[value.force_expr for value in values])
         return ret
 
-    @builds("=")
-    @builds("!=")
-    @builds("<")
-    @builds("<=")
-    @builds(">")
-    @builds(">=")
-    @builds("is")
-    @builds("in")
-    @builds("is_not")
-    @builds("not_in")
-    @checkargs(min=2)
-    def compile_compare_op_expression(self, expression):
+    def _compile_compare_op_expression(self, expression):
         ops = {"=": ast.Eq, "!=": ast.NotEq,
                "<": ast.Lt, "<=": ast.LtE,
                ">": ast.Gt, ">=": ast.GtE,
@@ -1541,7 +1836,7 @@ class HyASTCompiler(object):
         ops = [op() for x in range(1, len(expression))]
 
         e = expression[0]
-        exprs, ret = self._compile_collect(expression)
+        exprs, ret, _ = self._compile_collect(expression)
 
         return ret + ast.Compare(left=exprs[0],
                                  ops=ops,
@@ -1549,15 +1844,40 @@ class HyASTCompiler(object):
                                  lineno=e.start_line,
                                  col_offset=e.start_column)
 
+    @builds("=")
+    @builds("!=")
+    @builds("<")
+    @builds("<=")
+    @builds(">")
+    @builds(">=")
+    @checkargs(min=1)
+    def compile_compare_op_expression(self, expression):
+        if len(expression) == 2:
+            rval = "True"
+            if expression[0] == "!=":
+                rval = "False"
+            return ast.Name(id=rval,
+                            ctx=ast.Load(),
+                            lineno=expression.start_line,
+                            col_offset=expression.start_column)
+        return self._compile_compare_op_expression(expression)
+
+    @builds("is")
+    @builds("in")
+    @builds("is_not")
+    @builds("not_in")
+    @checkargs(min=2)
+    def compile_compare_op_expression_coll(self, expression):
+        return self._compile_compare_op_expression(expression)
+
     @builds("%")
-    @builds("/")
-    @builds("//")
     @builds("**")
     @builds("<<")
     @builds(">>")
     @builds("|")
     @builds("^")
     @builds("&")
+    @builds_if("@", PY35)
     @checkargs(min=2)
     def compile_maths_expression(self, expression):
         ops = {"+": ast.Add,
@@ -1572,6 +1892,8 @@ class HyASTCompiler(object):
                "|": ast.BitOr,
                "^": ast.BitXor,
                "&": ast.BitAnd}
+        if PY35:
+            ops.update({"@": ast.MatMult})
 
         inv = expression.pop(0)
         op = ops[inv]
@@ -1590,11 +1912,14 @@ class HyASTCompiler(object):
 
     @builds("+")
     @builds("*")
+    @builds("/")
+    @builds("//")
     def compile_maths_expression_mul(self, expression):
         if len(expression) > 2:
             return self.compile_maths_expression(expression)
         else:
-            id_op = {"+": HyInteger(0), "*": HyInteger(1)}
+            id_op = {"+": HyInteger(0), "*": HyInteger(1), "/": HyInteger(1),
+                     "//": HyInteger(1)}
 
             op = expression.pop(0)
             arg = expression.pop(0) if expression else id_op[op]
@@ -1631,6 +1956,7 @@ class HyASTCompiler(object):
     @builds("|=")
     @builds("^=")
     @builds("&=")
+    @builds_if("@=", PY35)
     @checkargs(2)
     def compile_augassign_expression(self, expression):
         ops = {"+=": ast.Add,
@@ -1645,10 +1971,12 @@ class HyASTCompiler(object):
                "|=": ast.BitOr,
                "^=": ast.BitXor,
                "&=": ast.BitAnd}
+        if PY35:
+            ops.update({"@=": ast.MatMult})
 
         op = ops[expression[0]]
 
-        target = self._storeize(self.compile(expression[1]))
+        target = self._storeize(expression[1], self.compile(expression[1]))
         ret = self.compile(expression[2])
 
         ret += ast.AugAssign(
@@ -1669,7 +1997,7 @@ class HyASTCompiler(object):
     @builds(HyExpression)
     def compile_expression(self, expression):
         # Perform macro expansions
-        expression = macroexpand(expression, self.module_name)
+        expression = macroexpand(expression, self)
         if not isinstance(expression, HyExpression):
             # Go through compile again if the type changed.
             return self.compile(expression)
@@ -1710,11 +2038,20 @@ class HyASTCompiler(object):
 
         if not func:
             func = self.compile(fn)
-        args, ret = self._compile_collect(expression[1:])
+
+        # An exception for pulling together keyword args is if we're doing
+        # a typecheck, eg (type :foo)
+        if fn in ("type", "HyKeyword", "keyword", "name", "is_keyword"):
+            with_kwargs = False
+        else:
+            with_kwargs = True
+
+        args, ret, kwargs = self._compile_collect(expression[1:],
+                                                  with_kwargs)
 
         ret += ast.Call(func=func.expr,
                         args=args,
-                        keywords=[],
+                        keywords=kwargs,
                         starargs=None,
                         kwargs=None,
                         lineno=expression.start_line,
@@ -1724,27 +2061,63 @@ class HyASTCompiler(object):
 
     @builds("def")
     @builds("setv")
-    @checkargs(2)
     def compile_def_expression(self, expression):
-        return self._compile_assign(expression[1], expression[2],
-                                    expression.start_line,
-                                    expression.start_column)
+        root = expression.pop(0)
+        if not expression:
+            result = Result()
+            result += ast.Name(id='None', ctx=ast.Load(),
+                               lineno=root.start_line,
+                               col_offset=root.start_column)
+            return result
+        elif len(expression) == 2:
+            return self._compile_assign(expression[0], expression[1],
+                                        expression.start_line,
+                                        expression.start_column)
+        elif len(expression) % 2 != 0:
+            raise HyTypeError(expression,
+                              "`{}' needs an even number of arguments".format(
+                                  root))
+        else:
+            result = Result()
+            exprs = []
+            for tgt, target in zip(expression[::2], expression[1::2]):
+                item = self._compile_assign(tgt, target,
+                                            tgt.start_line, tgt.start_column)
+                result += item
+                exprs.append(item.force_expr)
+
+            result += ast.Tuple(elts=exprs, lineno=expression.start_line,
+                                col_offset=expression.start_column,
+                                ctx=ast.Load())
+            return result
 
     def _compile_assign(self, name, result,
                         start_line, start_column):
+
+        str_name = "%s" % name
+        if _is_hy_builtin(str_name, self.module_name) and \
+           not self.allow_builtins:
+            raise HyTypeError(name,
+                              "Can't assign to a builtin: `%s'" % str_name)
+
         result = self.compile(result)
-
-        if result.temp_variables and isinstance(name, HyString):
-            result.rename(name)
-            return result
-
         ld_name = self.compile(name)
-        st_name = self._storeize(ld_name)
 
-        result += ast.Assign(
-            lineno=start_line,
-            col_offset=start_column,
-            targets=[st_name], value=result.force_expr)
+        if isinstance(ld_name.expr, ast.Call):
+            raise HyTypeError(name,
+                              "Can't assign to a callable: `%s'" % str_name)
+
+        if result.temp_variables \
+           and isinstance(name, HyString) \
+           and '.' not in name:
+            result.rename(name)
+        else:
+            st_name = self._storeize(name, ld_name)
+            result += ast.Assign(
+                lineno=start_line,
+                col_offset=start_column,
+                targets=[st_name],
+                value=result.force_expr)
 
         result += ld_name
         return result
@@ -1767,7 +2140,7 @@ class HyASTCompiler(object):
             raise HyTypeError(expression,
                               "for requires two forms in the list")
 
-        target = self._storeize(self.compile(target_name))
+        target = self._storeize(target_name, self.compile(target_name))
 
         ret = Result()
 
@@ -1820,11 +2193,36 @@ class HyASTCompiler(object):
 
     @builds(HyList)
     def compile_list(self, expression):
-        elts, ret = self._compile_collect(expression)
+        elts, ret, _ = self._compile_collect(expression)
         ret += ast.List(elts=elts,
                         ctx=ast.Load(),
                         lineno=expression.start_line,
                         col_offset=expression.start_column)
+        return ret
+
+    @builds(HySet)
+    def compile_set(self, expression):
+        elts, ret, _ = self._compile_collect(expression)
+        if PY27:
+            ret += ast.Set(elts=elts,
+                           ctx=ast.Load(),
+                           lineno=expression.start_line,
+                           col_offset=expression.start_column)
+        else:
+            ret += ast.Call(func=ast.Name(id='set',
+                                          ctx=ast.Load(),
+                                          lineno=expression.start_line,
+                                          col_offset=expression.start_column),
+                            args=[
+                                ast.List(elts=elts,
+                                         ctx=ast.Load(),
+                                         lineno=expression.start_line,
+                                         col_offset=expression.start_column)],
+                            keywords=[],
+                            starargs=None,
+                            kwargs=None,
+                            lineno=expression.start_line,
+                            col_offset=expression.start_column)
         return ret
 
     @builds("lambda")
@@ -1834,24 +2232,52 @@ class HyASTCompiler(object):
         called_as = expression.pop(0)
 
         arglist = expression.pop(0)
-        ret, args, defaults, stararg, kwargs = self._parse_lambda_list(arglist)
+        if not isinstance(arglist, HyList):
+            raise HyTypeError(expression,
+                              "First argument to `{}' must be a list".format(
+                                  called_as))
+
+        (ret, args, defaults, stararg,
+         kwonlyargs, kwonlydefaults, kwargs) = self._parse_lambda_list(arglist)
+        for i, arg in enumerate(args):
+            if isinstance(arg, HyList):
+                # Destructuring argument
+                if not arg:
+                    raise HyTypeError(arglist,
+                                      "Cannot destruct empty list")
+                args[i] = var = HySymbol(self.get_anon_var())
+                expression = HyExpression([
+                    HyExpression([
+                        HyString("setv"), arg, var
+                    ])]
+                ) + expression
+                expression = expression.replace(arg[0])
 
         if PY34:
-            # Python 3.4+ requres that args are an ast.arg object, rather
+            # Python 3.4+ requires that args are an ast.arg object, rather
             # than an ast.Name or bare string.
             args = [ast.arg(arg=ast_str(x),
                             annotation=None,  # Fix me!
                             lineno=x.start_line,
                             col_offset=x.start_column) for x in args]
 
+            kwonlyargs = [ast.arg(arg=ast_str(x), annotation=None,
+                                  lineno=x.start_line,
+                                  col_offset=x.start_column)
+                          for x in kwonlyargs]
+
             # XXX: Beware. Beware. This wasn't put into the parse lambda
             # list because it's really just an internal parsing thing.
 
             if kwargs:
-                kwargs = ast.arg(arg=kwargs, annotation=None)
+                kwargs = ast.arg(arg=ast_str(kwargs), annotation=None,
+                                 lineno=kwargs.start_line,
+                                 col_offset=kwargs.start_column)
 
             if stararg:
-                stararg = ast.arg(arg=stararg, annotation=None)
+                stararg = ast.arg(arg=ast_str(stararg), annotation=None,
+                                  lineno=stararg.start_line,
+                                  col_offset=stararg.start_column)
 
             # Let's find a better home for these guys.
         else:
@@ -1860,12 +2286,24 @@ class HyASTCompiler(object):
                              lineno=x.start_line,
                              col_offset=x.start_column) for x in args]
 
+            if PY3:
+                kwonlyargs = [ast.Name(arg=ast_str(x), id=ast_str(x),
+                                       ctx=ast.Param(), lineno=x.start_line,
+                                       col_offset=x.start_column)
+                              for x in kwonlyargs]
+
+            if kwargs:
+                kwargs = ast_str(kwargs)
+
+            if stararg:
+                stararg = ast_str(stararg)
+
         args = ast.arguments(
             args=args,
             vararg=stararg,
             kwarg=kwargs,
-            kwonlyargs=[],
-            kw_defaults=[],
+            kwonlyargs=kwonlyargs,
+            kw_defaults=kwonlydefaults,
             defaults=defaults)
 
         body = self._compile_branch(expression)
@@ -1879,7 +2317,10 @@ class HyASTCompiler(object):
             return ret
 
         if body.expr:
-            if body.contains_yield:
+            if body.contains_yield and not PY33:
+                # Prior to PEP 380 (introduced in Python 3.3)
+                # generators may not have a value in a return
+                # statement.
                 body += body.expr_as_stmt()
             else:
                 body += ast.Return(value=body.expr,
@@ -1911,17 +2352,33 @@ class HyASTCompiler(object):
 
     @builds("defclass")
     @checkargs(min=1)
-    def compile_class_expression(self, expression):
-        expression.pop(0)  # class
+    def compile_class_expression(self, expressions):
+        def rewire_init(expr):
+            new_args = []
+            if expr[0] == HySymbol("setv"):
+                pairs = expr[1:]
+                while len(pairs) > 0:
+                    k, v = (pairs.pop(0), pairs.pop(0))
+                    if k == HySymbol("__init__"):
+                        v.append(HySymbol("None"))
+                    new_args.append(k)
+                    new_args.append(v)
+                expr = HyExpression([
+                    HySymbol("setv")
+                ] + new_args).replace(expr)
 
-        class_name = expression.pop(0)
+            return expr
 
-        if expression:
-            base_list = expression.pop(0)
+        expressions.pop(0)  # class
+
+        class_name = expressions.pop(0)
+
+        if expressions:
+            base_list = expressions.pop(0)
             if not isinstance(base_list, HyList):
-                raise HyTypeError(expression,
+                raise HyTypeError(expressions,
                                   "Bases class must be a list")
-            bases_expr, bases = self._compile_collect(base_list)
+            bases_expr, bases, _ = self._compile_collect(base_list)
         else:
             bases_expr = []
             bases = Result()
@@ -1929,8 +2386,8 @@ class HyASTCompiler(object):
         body = Result()
 
         # grab the doc string, if there is one
-        if expression and isinstance(expression[0], HyString):
-            docstring = expression.pop(0)
+        if expressions and isinstance(expressions[0], HyString):
+            docstring = expressions.pop(0)
             symb = HySymbol("__doc__")
             symb.start_line = docstring.start_line
             symb.start_column = docstring.start_column
@@ -1939,29 +2396,29 @@ class HyASTCompiler(object):
                                          docstring.start_column)
             body += body.expr_as_stmt()
 
-        if expression:
-            try:
-                body_expression = iter(expression.pop(0))
-            except TypeError:
-                raise HyTypeError(
-                    expression,
-                    "Wrong argument type for defclass slots definition.")
-            for b in body_expression:
-                if len(b) != 2:
-                    raise HyTypeError(
-                        expression,
-                        "Wrong number of argument in defclass slot.")
-                body += self._compile_assign(b[0], b[1],
-                                             b.start_line, b.start_column)
-                body += body.expr_as_stmt()
+        allow_builtins = self.allow_builtins
+        self.allow_builtins = True
+        if expressions and isinstance(expressions[0], HyList) \
+           and not isinstance(expressions[0], HyExpression):
+            expr = expressions.pop(0)
+            expr = HyExpression([
+                HySymbol("setv")
+            ] + expr).replace(expr)
+            body += self.compile(rewire_init(expr))
+
+        for expression in expressions:
+            expr = rewire_init(macroexpand(expression, self))
+            body += self.compile(expr)
+
+        self.allow_builtins = allow_builtins
 
         if not body.stmts:
-            body += ast.Pass(lineno=expression.start_line,
-                             col_offset=expression.start_column)
+            body += ast.Pass(lineno=expressions.start_line,
+                             col_offset=expressions.start_column)
 
         return bases + ast.ClassDef(
-            lineno=expression.start_line,
-            col_offset=expression.start_column,
+            lineno=expressions.start_line,
+            col_offset=expressions.start_column,
             decorator_list=[],
             name=ast_str(class_name),
             keywords=[],
@@ -1992,6 +2449,9 @@ class HyASTCompiler(object):
             raise HyTypeError(name, ("received a `%s' instead of a symbol "
                                      "for macro name" % type(name).__name__))
         name = HyString(name).replace(name)
+        for kw in ("&kwonly", "&kwargs", "&key"):
+            if kw in expression[0]:
+                raise HyTypeError(name, "macros cannot use %s" % kw)
         new_expression = HyExpression([
             HySymbol("with_decorator"),
             HyExpression([HySymbol("hy.macros.macro"), name]),
@@ -2010,7 +2470,7 @@ class HyASTCompiler(object):
         NOT_READERS = [":", "&"]
         if name in NOT_READERS or len(name) > 1:
             raise NameError("%s can't be used as a macro reader symbol" % name)
-        if not isinstance(name, HySymbol):
+        if not isinstance(name, HySymbol) and not isinstance(name, HyString):
             raise HyTypeError(name,
                               ("received a `%s' instead of a symbol "
                                "for reader macro name" % type(name).__name__))
@@ -2036,15 +2496,12 @@ class HyASTCompiler(object):
                 "Trying to expand a reader macro using `{0}' instead "
                 "of string".format(type(str_char).__name__),
             )
-
-        module = self.module_name
-        expr = reader_macroexpand(str_char, expression.pop(0), module)
-
+        expr = reader_macroexpand(str_char, expression.pop(0), self)
         return self.compile(expr)
 
     @builds("eval_and_compile")
     def compile_eval_and_compile(self, expression):
-        expression[0] = HySymbol("progn")
+        expression[0] = HySymbol("do")
         hy.importer.hy_eval(expression,
                             compile_time_ns(self.module_name),
                             self.module_name)
@@ -2053,7 +2510,7 @@ class HyASTCompiler(object):
 
     @builds("eval_when_compile")
     def compile_eval_when_compile(self, expression):
-        expression[0] = HySymbol("progn")
+        expression[0] = HySymbol("do")
         hy.importer.hy_eval(expression,
                             compile_time_ns(self.module_name),
                             self.module_name)
@@ -2120,7 +2577,7 @@ class HyASTCompiler(object):
 
     @builds(HyDict)
     def compile_dict(self, m):
-        keyvalues, ret = self._compile_collect(m)
+        keyvalues, ret, _ = self._compile_collect(m)
 
         ret += ast.Dict(lineno=m.start_line,
                         col_offset=m.start_column,
@@ -2136,11 +2593,6 @@ def hy_compile(tree, module_name, root=ast.Module, get_expr=False):
     If `get_expr` is True, return a tuple (module, last_expression), where
     `last_expression` is the.
     """
-
-    if hasattr(sys, "subversion"):
-        implementation = sys.subversion[0].lower()
-    elif hasattr(sys, "implementation"):
-        implementation = sys.implementation.name.lower()
 
     body = []
     expr = None
@@ -2160,12 +2612,6 @@ def hy_compile(tree, module_name, root=ast.Module, get_expr=False):
         body = compiler.imports_as_stmts(spoof_tree) + result.stmts
 
     ret = root(body=body)
-
-    # PyPy _really_ doesn't like the ast going backwards...
-    if implementation != "cpython":
-        for node in ast.walk(ret):
-            node.lineno = 1
-            node.col_offset = 1
 
     if get_expr:
         expr = ast.Expression(body=expr)

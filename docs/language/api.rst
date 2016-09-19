@@ -2,7 +2,6 @@
 Hy (the language)
 =================
 
-
 .. warning::
     This is incomplete; please consider contributing to the documentation
     effort.
@@ -13,28 +12,43 @@ Theory of Hy
 
 Hy maintains, over everything else, 100% compatibility in both directions
 with Python itself. All Hy code follows a few simple rules. Memorize
-this, it's going to come in handy.
+this, as it's going to come in handy.
 
-These rules help make sure code is idiomatic and interface-able in both
+These rules help ensure that Hy code is idiomatic and interfaceable in both
 languages.
 
 
-  * Symbols in earmufs will be translated to the uppercased version of that
-    string. For example, `*foo*` will become `FOO`.
+  * Symbols in earmufs will be translated to the upper-cased version of that
+    string. For example, ``foo`` will become ``FOO``.
 
   * UTF-8 entities will be encoded using
-    `punycode <http://en.wikipedia.org/wiki/Punycode>`_ and prefixed with
-    `hy_`. For instance, `⚘` will become `hy_w7h`, `♥` will become `hy_g6h`,
-    and `i♥u` will become `hy_iu_t0x`.
+    `punycode <https://en.wikipedia.org/wiki/Punycode>`_ and prefixed with
+    ``hy_``. For instance, ``⚘`` will become ``hy_w7h``, ``♥`` will become
+    ``hy_g6h``, and ``i♥u`` will become ``hy_iu_t0x``.
 
   * Symbols that contain dashes will have them replaced with underscores. For
-    example, `render-template` will become `render_template`. This means that
-    symbols with dashes will shadow their underscore equivalents, and vice
+    example, ``render-template`` will become ``render_template``. This means
+    that symbols with dashes will shadow their underscore equivalents, and vice
     versa.
 
+Notes on Syntax
+===============
 
-Builtins
-========
+integers
+--------
+
+.. versionadded:: 0.11.1
+
+In addition to regular numbers, standard notation from Python 3 for non-base 10
+integers is used. ``0x`` for Hex, ``0o`` for Octal, ``0b`` for Binary.
+
+.. code-block:: clj
+    
+    (print 0x80 0b11101 0o102 30)
+
+
+Built-Ins
+=========
 
 Hy features a number of special forms that are used to help generate
 correct Python AST. The following are "special" forms, which may have
@@ -43,11 +57,10 @@ behavior that's slightly unexpected in some situations.
 .
 -
 
-.. versionadded:: 0.9.13
+.. versionadded:: 0.10.0
 
-
-`.` is used to perform attribute access on objects. It uses a small DSL
-to allow quick access to attributes and items in a nested datastructure.
+``.`` is used to perform attribute access on objects. It uses a small DSL
+to allow quick access to attributes and items in a nested data structure.
 
 For instance,
 
@@ -55,57 +68,59 @@ For instance,
 
     (. foo bar baz [(+ 1 2)] frob)
 
-Compiles down to
+Compiles down to:
 
 .. code-block:: python
 
      foo.bar.baz[1 + 2].frob
 
-`.` compiles its first argument (in the example, `foo`) as the object on
-which to do the attribute dereference. It uses bare symbols as
-attributes to access (in the example, `bar`, `baz`, `frob`), and
-compiles the contents of lists (in the example, ``[(+ 1 2)]``) for
-indexation. Other arguments throw a compilation error.
+``.`` compiles its first argument (in the example, *foo*) as the object on
+which to do the attribute dereference. It uses bare symbols as attributes
+to access (in the example, *bar*, *baz*, *frob*), and compiles the contents
+of lists (in the example, ``[(+ 1 2)]``) for indexation. Other arguments
+raise a compilation error.
 
-Access to unknown attributes throws an :exc:`AttributeError`. Access to
-unknown keys throws an :exc:`IndexError` (on lists and tuples) or a
-:exc:`KeyError` (on dicts).
+Access to unknown attributes raises an :exc:`AttributeError`. Access to
+unknown keys raises an :exc:`IndexError` (on lists and tuples) or a
+:exc:`KeyError` (on dictionaries).
 
 ->
 --
 
-`->` or `threading macro` is used to avoid nesting of expressions. The threading
-macro inserts each expression into the next expression’s first argument place.
-The following code demonstrates this:
+``->`` (or the *threading macro*) is used to avoid nesting of expressions. The
+threading macro inserts each expression into the next expression's first argument
+place. The following code demonstrates this:
 
 .. code-block:: clj
 
     => (defn output [a b] (print a b))
-    => (-> (+ 5 5) (output 5))
+    => (-> (+ 4 6) (output 5))
     10 5
 
 
 ->>
 ---
 
-`->>` or `threading tail macro` is similar to `threading macro` but instead of
-inserting each expression into the next expression’s first argument place, it
-appends it as the last argument. The following code demonstrates this:
+``->>`` (or the *threading tail macro*) is similar to the *threading macro*, but
+instead of inserting each expression into the next expression's first argument,
+it appends it as the last argument. The following code demonstrates this:
 
 .. code-block:: clj
 
     => (defn output [a b] (print a b))
-    => (->> (+ 5 5) (output 5))
+    => (->> (+ 4 6) (output 5))
     5 10
 
 
 apply
 -----
 
-`apply` is used to apply an optional list of arguments and an optional
-dictionary of kwargs to a function.
+``apply`` is used to apply an optional list of arguments and an
+optional dictionary of kwargs to a function. The symbol mangling
+transformations will be applied to all keys in the dictionary of
+kwargs, provided the dictionary and its keys are defined in-place.
 
-Usage: `(apply fn-name [args] [kwargs])`
+Usage: ``(apply fn-name [args] [kwargs])``
 
 Examples:
 
@@ -129,13 +144,15 @@ Examples:
     (apply total-purchase [] {"price" 10 "amount" 15 "vat" 1.05})
     ;=> 165.375
 
+    (apply total-purchase [] {:price 10 :amount 15 :vat 1.05})
+    ;=> 165.375
 
 and
 ---
 
-`and` form is used in logical expressions. It takes at least two parameters. If
-all parameters evaluate to `True` the last parameter is returned. In any other
-case the first false value will be returned. Examples of usage:
+``and`` is used in logical expressions. It takes at least two parameters. If
+all parameters evaluate to ``True``, the last parameter is returned. In any
+other case, the first false value will be returned. Example usage:
 
 .. code-block:: clj
 
@@ -151,89 +168,88 @@ case the first false value will be returned. Examples of usage:
     => (and True [] False True)
     []
 
-.. note:: `and` shortcuts and stops evaluating parameters as soon as the first
-          false is encountered. However, in the current implementation of Hy
-          statements are executed as soon as they are converted to expressions.
-          The following two examples demonstrates the difference.
+.. note::
+
+    ``and`` short-circuits and stops evaluating parameters as soon as the first
+    false is encountered.
 
 .. code-block:: clj
 
     => (and False (print "hello"))
-    hello
-    False
-
-    => (defn side-effects [x] (print "I can has" x) x)
-    => (and (side-effects false) (side-effects 42))
-    I can has False
     False
 
 
 assert
 ------
 
-`assert` is used to verify conditions while the program is running. If the 
-condition is not met, an `AssertionError` is raised. The example usage:
+``assert`` is used to verify conditions while the program is
+running. If the condition is not met, an :exc:`AssertionError` is
+raised. ``assert`` may take one or two parameters.  The first
+parameter is the condition to check, and it should evaluate to either
+``True`` or ``False``. The second parameter, optional, is a label for
+the assert, and is the string that will be raised with the
+:exc:`AssertionError`. For example:
 
 .. code-block:: clj
 
-    (assert (= variable expected-value))
+  (assert (= variable expected-value))
 
-Assert takes a single parameter, a conditional that evaluates to either `True`
-or `False`.
+  (assert False)
+  ; AssertionError
+
+  (assert (= 1 2) "one should equal two")
+  ; AssertionError: one should equal two
 
 
 assoc
 -----
 
-`assoc` form is used to associate a key with a value in a dictionary or to set
-an index of a list to a value. It takes at least three parameters: `datastructure` 
-to be modified, `key` or `index`  and `value`. If more than three parameters are
-used it will associate in pairs.
+``assoc`` is used to associate a key with a value in a dictionary or to set an
+index of a list to a value. It takes at least three parameters: the *data
+structure* to be modified, a *key* or *index*, and a *value*. If more than
+three parameters are used, it will associate in pairs.
 
 Examples of usage:
 
 .. code-block:: clj
 
-  =>(let [[collection {}]]
+  =>(let [collection {}]
   ... (assoc collection "Dog" "Bark")
   ... (print collection))
   {u'Dog': u'Bark'}
 
-  =>(let [[collection {}]]
+  =>(let [collection {}]
   ... (assoc collection "Dog" "Bark" "Cat" "Meow")
   ... (print collection))
   {u'Cat': u'Meow', u'Dog': u'Bark'}
 
-  =>(let [[collection [1 2 3 4]]]
+  =>(let [collection [1 2 3 4]]
   ... (assoc collection 2 None)
   ... (print collection))
   [1, 2, None, 4]
 
-.. note:: `assoc` modifies the datastructure in place and returns `None`.
+.. note:: ``assoc`` modifies the datastructure in place and returns ``None``.
 
 
 break
 -----
 
-`break` is used to break out from a loop. It terminates the loop immediately.
-
-The following example has an infinite while loop that is terminated as soon as
-the user enters `k`.
+``break`` is used to break out from a loop. It terminates the loop immediately.
+The following example has an infinite ``while`` loop that is terminated as soon
+as the user enters *k*.
 
 .. code-block:: clj
 
-    (while True (if (= "k" (raw-input "? ")) 
-                  (break) 
+    (while True (if (= "k" (raw-input "? "))
+                  (break)
                   (print "Try again")))
 
 
 cond
 ----
 
-`cond` macro can be used to build nested if-statements.
-
-The following example shows the relationship between the macro and the expanded
-code:
+``cond`` can be used to build nested ``if`` statements. The following example
+shows the relationship between the macro and its expansion:
 
 .. code-block:: clj
 
@@ -243,7 +259,7 @@ code:
     (if condition-1 result-1
       (if condition-2 result-2))
 
-As shown below only the first matching result block is executed.
+As shown below, only the first matching result block is executed.
 
 .. code-block:: clj
 
@@ -252,7 +268,7 @@ As shown below only the first matching result block is executed.
     ...        [(= value 5) (print "value is equal to 5")]
     ...        [(> value 5) (print "value is greater than 5")]
     ...	       [True (print "value is something that it should not be")]))
- 
+
     => (check-value 6)
     value is greater than 5
 
@@ -260,9 +276,9 @@ As shown below only the first matching result block is executed.
 continue
 --------
 
-`continue` returns execution to the start of a loop. In the following example,
-function `(side-effect1)` is called for each iteration. `(side-effect2)` 
-however is called only for every other value in the list.
+``continue`` returns execution to the start of a loop. In the following example,
+``(side-effect1)`` is called for each iteration. ``(side-effect2)``, however,
+is only called on every other value in the list.
 
 .. code-block:: clj
 
@@ -270,20 +286,34 @@ however is called only for every other value in the list.
     ;; collection is a list of numerical values
 
     (for [x collection]
-      (do
-        (side-effect1 x)
-        (if (% x 2)
-          (continue))
-        (side-effect2 x)))
+      (side-effect1 x)
+      (if (% x 2)
+        (continue))
+      (side-effect2 x))
 
 
-do / progn
+dict-comp
+---------
+
+``dict-comp`` is used to create dictionaries. It takes three or four parameters.
+The first two parameters are for controlling the return value (key-value pair)
+while the third is used to select items from a sequence. The fourth and optional
+parameter can be used to filter out some of the items in the sequence based on a
+conditional expression.
+
+.. code-block:: hy
+
+    => (dict-comp x (* x 2) [x (range 10)] (odd? x))
+    {1: 2, 3: 6, 9: 18, 5: 10, 7: 14}
+
+
+do
 ----------
 
-the `do` and `progn` forms are used to evaluate each of their arguments and
-return the last one. Return values from every other than the last argument are
-discarded. It can be used in `lambda` or `list-comp` to perform more complex
-logic as shown by one of the examples.
+``do`` is used to evaluate each of its arguments and return the
+last one. Return values from every other than the last argument are discarded.
+It can be used in ``lambda`` or ``list-comp`` to perform more complex logic as
+shown in one of the following examples.
 
 Some example usage:
 
@@ -296,21 +326,21 @@ Some example usage:
     Yeah, really!
 
     ;; assuming that (side-effect) is a function that we want to call for each
-    ;; and every value in the list, but which return values we do not care
-    => (list-comp (do (side-effect x) 
-    ...               (if (< x 5) (* 2 x) 
-    ...                   (* 4 x))) 
+    ;; and every value in the list, but whose return value we do not care about
+    => (list-comp (do (side-effect x)
+    ...               (if (< x 5) (* 2 x)
+    ...                   (* 4 x)))
     ...           (x (range 10)))
     [0, 2, 4, 6, 8, 20, 24, 28, 32, 36]
 
-`do` can accept any number of arguments, from 1 to n.
+``do`` can accept any number of arguments, from 1 to n.
 
 
 def / setv
------------------
+----------
 
-`def` and `setv` are used to bind value, object or a function to a symbol. For
-example:
+``def`` and ``setv`` are used to bind a value, object, or function to a symbol.
+For example:
 
 .. code-block:: clj
 
@@ -322,18 +352,32 @@ example:
     => (counter [1 2 3 4 5 2 3] 2)
     2
 
+They can be used to assign multiple variables at once:
+
+.. code-block:: hy
+
+    => (setv a 1 b 2)
+    (1L, 2L)
+    => a
+    1L
+    => b
+    2L
+    =>
+
 
 defclass
 --------
 
-new classes are declared with `defclass`. It can takes two optional parameters:
+New classes are declared with ``defclass``. It can takes two optional parameters:
 a vector defining a possible super classes and another vector containing
 attributes of the new class as two item vectors.
 
 .. code-block:: clj
 
     (defclass class-name [super-class-1 super-class-2]
-      [[attribute value]])
+      [attribute value]
+
+      (defn method [self] (print "hello!")))
 
 Both values and functions can be bound on the new class as shown by the example
 below:
@@ -341,9 +385,10 @@ below:
 .. code-block:: clj
 
     => (defclass Cat []
-    ...  [[age None]
-    ...   [colour "white"]
-    ...   [speak (fn [self] (print "Meow"))]])
+    ...  [age None
+    ...   colour "white"]
+    ...
+    ...  (defn speak [self] (print "Meow")))
 
     => (def spot (Cat))
     => (setv spot.colour "Black")
@@ -354,24 +399,24 @@ below:
 
 .. _defn:
 
-defn / defun
-------------
+defn
+----
 
-`defn` and `defun` macros are used to define functions. They take three
-parameters: `name` of the function to define, vector of `parameters` and the
-`body` of the function:
+``defn`` macro is used to define functions. It takes three
+parameters: the *name* of the function to define, a vector of *parameters*,
+and the *body* of the function:
 
 .. code-block:: clj
 
     (defn name [params] body)
 
-Parameters may have following keywords in front of them:
+Parameters may have the following keywords in front of them:
 
 &optional
-    parameter is optional. The parameter can be given as a two item list, where
+    Parameter is optional. The parameter can be given as a two item list, where
     the first element is parameter name and the second is the default value. The
     parameter can be also given as a single item, in which case the default
-    value is None.
+    value is ``None``.
 
     .. code-block:: clj
 
@@ -385,10 +430,29 @@ Parameters may have following keywords in front of them:
 	101.0
 
 &key
-    
+    Parameter is a dict of keyword arguments. The keys of the dict
+    specify the parameter names and the values give the default values
+    of the parameters.
+
+    .. code-block:: clj
+
+       => (defn key-parameters [&key {"a" 1 "b" 2}]
+       ... (print "a is" a "and b is" b))
+       => (key-parameters :a 1 :b 2)
+       a is 1 and b is 2
+       => (key-parameters :b 1 :a 2)
+       a is 2 and b is 1
+
+    The following declarations are equivalent:
+
+    .. code-block:: clj
+
+       (defn key-parameters [&key {"a" 1 "b" 2}])
+
+       (defn key-parameters [&optional [a 1] [b 2]])
 
 &kwargs
-    parameter will contain 0 or more keyword arguments.
+    Parameter will contain 0 or more keyword arguments.
 
     The following code examples defines a function that will print all keyword
     arguments and their values.
@@ -398,23 +462,28 @@ Parameters may have following keywords in front of them:
         => (defn print-parameters [&kwargs kwargs]
         ...    (for [(, k v) (.items kwargs)] (print k v)))
 
-        => (kwapply (print-parameters) {"parameter-1" 1 "parameter-2" 2})
-        parameter-2 2
+        => (print-parameters :parameter-1 1 :parameter-2 2)
+        parameter_1 1
+        parameter_2 2
+
+        ; to avoid the mangling of '-' to '_', use apply:
+        => (apply print-parameters [] {"parameter-1" 1 "parameter-2" 2})
         parameter-1 1
+        parameter-2 2
 
 &rest
-    parameter will contain 0 or more positional arguments. No other positional
+    Parameter will contain 0 or more positional arguments. No other positional
     arguments may be specified after this one.
 
     The following code example defines a function that can be given 0 to n
-    numerical parameters. It then sums every odd number and substracts
+    numerical parameters. It then sums every odd number and subtracts
     every even number.
 
     .. code-block:: clj
 
         => (defn zig-zag-sum [&rest numbers]
-             (let [[odd-numbers (list-comp x [x numbers] (odd? x))]
-	           [even-numbers (list-comp x [x numbers] (even? x))]]
+             (let [odd-numbers (list-comp x [x numbers] (odd? x))
+	           even-numbers (list-comp x [x numbers] (even? x))]
                (- (sum odd-numbers) (sum even-numbers))))
 
         => (zig-zag-sum)
@@ -424,39 +493,89 @@ Parameters may have following keywords in front of them:
         => (zig-zag-sum 1 2 3 4 5 6)
         -3
 
-.. _defn-alias / defun-alias:
+&kwonly
+    .. versionadded:: 0.12.0
 
-defn-alias / defun-alias
-------------------------
+    Parameters that can only be called as keywords. Mandatory
+    keyword-only arguments are declared with the argument's name;
+    optional keyword-only arguments are declared as a two-element list
+    containing the argument name followed by the default value (as
+    with `&optional` above).
 
-.. versionadded:: 0.9.13
+    .. code-block:: clj
 
-The `defn-alias` and `defun-alias` macros are much like `defn`_ above,
-with the difference that instead of defining a function with a single
-name, these can also define aliases. Other than taking a list of
-symbols for function names as the first parameter, `defn-alias` and
-`defun-alias` have no other differences compared to `defn` and
-`defun`.
+        => (defn compare [a b &kwonly keyfn [reverse false]]
+        ...  (let [result (keyfn a b)]
+        ...    (if (not reverse)
+        ...      result
+        ...      (- result))))
+        => (apply compare ["lisp" "python"]
+        ...        {"keyfn" (fn [x y]
+        ...                   (reduce - (map (fn [s] (ord (first s))) [x y])))})
+        -4
+        => (apply compare ["lisp" "python"]
+        ...        {"keyfn" (fn [x y]
+        ...                   (reduce - (map (fn [s] (ord (first s))) [x y])))
+        ...         "reverse" true})
+        4
+
+    .. code-block:: python
+
+        => (compare "lisp" "python")
+        Traceback (most recent call last):
+          File "<input>", line 1, in <module>
+        TypeError: compare() missing 1 required keyword-only argument: 'keyfn'
+
+    Availability: Python 3.
+
+
+defmain
+-------
+
+.. versionadded:: 0.10.1
+
+The ``defmain`` macro defines a main function that is immediately called
+with ``sys.argv`` as arguments if and only if this file is being executed
+as a script.  In other words, this:
 
 .. code-block:: clj
 
-  => (defn-alias [main-name alias] []
-  ...  (print "Hello!"))
-  => (main-name)
-  "Hello!"
-  => (alias)
-  "Hello!"
+   (defmain [&rest args]
+     (do-something-with args))
+
+is the equivalent of::
+
+   def main(*args):
+       do_something_with(args)
+       return 0
+
+   if __name__ == "__main__":
+       import sys
+       retval = main(*sys.arg)
+
+       if isinstance(retval, int):
+           sys.exit(retval)
+
+Note that as you can see above, if you return an integer from this
+function, this will be used as the exit status for your script.
+(Python defaults to exit status 0 otherwise, which means everything's
+okay!)
+
+(Since ``(sys.exit 0)`` is not run explicitly in the case of a non-integer
+return from ``defmain``, it's a good idea to put ``(defmain)`` as the last
+piece of code in your file.)
+
 
 .. _defmacro:
 
 defmacro
 --------
 
-`defmacro` is used to define macros. The general format is
-`(defmacro name [parameters] expr)`.
+``defmacro`` is used to define macros. The general format is
+``(defmacro name [parameters] expr)``.
 
-The following example defines a macro that can be used to swap order of elements in
-code, allowing the user to write code in infix notation, where operator is in
+The following example defines a macro that can be used to swap order of elements
+in code, allowing the user to write code in infix notation, where operator is in
 between the operands.
 
 .. code-block:: clj
@@ -470,31 +589,6 @@ between the operands.
   => (infix (1 + 1))
   2
 
-.. _defmacro-alias:
-
-defmacro-alias
---------------
-
-`defmacro-alias` is used to define macros with multiple names
-(aliases). The general format is `(defmacro-alias [names] [parameters]
-expr)`. It creates multiple macros with the same parameter list and
-body, under the specified list of names.
-
-The following example defines two macros, both of which allow the user
-to write code in infix notation.
-
-.. code-block:: clj
-
-  => (defmacro-alias [infix infi] [code]
-  ...  (quasiquote (
-  ...    (unquote (get code 1))
-  ...    (unquote (get code 0))
-  ...    (unquote (get code 2)))))
-
-  => (infix (1 + 1))
-  2
-  => (infi (1 + 1))
-  2
 
 .. _defmacro/g!:
 
@@ -503,11 +597,11 @@ defmacro/g!
 
 .. versionadded:: 0.9.12
 
-`defmacro/g!` is a special version of `defmacro` that is used to
-automatically generate :ref:`gensym` for any symbol that
-starts with ``g!``.
+``defmacro/g!`` is a special version of ``defmacro`` that is used to
+automatically generate :ref:`gensym` for any symbol that starts with
+``g!``.
 
-So ``g!a`` would become ``(gensym "a")``.
+For example, ``g!a`` would become ``(gensym "a")``.
 
 .. seealso::
 
@@ -518,7 +612,7 @@ defreader
 
 .. versionadded:: 0.9.12
 
-`defreader` defines a reader macro, enabling you to restructure or
+``defreader`` defines a reader macro, enabling you to restructure or
 modify syntax.
 
 .. code-block:: clj
@@ -538,7 +632,7 @@ del
 
 .. versionadded:: 0.9.12
 
-`del` removes an object from the current namespace.
+``del`` removes an object from the current namespace.
 
 .. code-block:: clj
 
@@ -549,14 +643,14 @@ del
     File "<console>", line 1, in <module>
   NameError: name 'foo' is not defined
 
-`del` can also remove objects from a mapping, a list, ...
+``del`` can also remove objects from mappings, lists, and more.
 
 .. code-block:: clj
 
   => (setv test (list (range 10)))
   => test
   [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-  => (del (slice test 2 4)) ;; remove items from 2 to 4 excluded
+  => (del (cut test 2 4)) ;; remove items from 2 to 4 excluded
   => test
   [0, 1, 4, 5, 6, 7, 8, 9]
   => (setv dic {"foo" "bar"})
@@ -566,10 +660,34 @@ del
   => dic
   {}
 
+doto
+----
+
+.. versionadded:: 0.10.1
+
+``doto`` is used to simplify a sequence of method calls to an object.
+
+.. code-block:: clj
+
+  => (doto [] (.append 1) (.append 2) .reverse)
+  [2 1]
+
+.. code-block:: clj
+
+  => (setv collection [])
+  => (.append collection 1)
+  => (.append collection 2)
+  => (.reverse collection)
+  => collection
+  [2 1]
+
 eval
 ----
 
-`eval` evaluates a quoted expression and returns the value.
+``eval`` evaluates a quoted expression and returns the value. The optional
+second and third arguments specify the dictionary of globals to use and the
+module name. The globals dictionary defaults to ``(local)`` and the module name
+defaults to the name of the current module.
 
 .. code-block:: clj
 
@@ -587,7 +705,7 @@ eval-when-compile
 first / car
 -----------
 
-`first` and `car` are macros for accessing the first element of a collection:
+``first`` and ``car`` are macros for accessing the first element of a collection:
 
 .. code-block:: clj
 
@@ -596,13 +714,13 @@ first / car
 
 
 for
--------
+---
 
-`for` is used to call a function for each element in a list or vector.
-The results of each call are discarded and the for expression returns
-None instead. The example code iterates over `collection` and
-for each `element` in `collection` calls the `side-effect`
-function with `element` as its argument:
+``for`` is used to call a function for each element in a list or vector.
+The results of each call are discarded and the ``for`` expression returns
+``None`` instead. The example code iterates over *collection* and for each
+*element* in *collection* calls the ``side-effect`` function with *element*
+as its argument:
 
 .. code-block:: clj
 
@@ -613,13 +731,14 @@ function with `element` as its argument:
     (for [element collection] (side-effect element)
          (else (side-effect-2)))
 
-The optional `else` block is executed only if the `for` loop terminates
-normally. If the execution is halted with `break`, the `else` does not execute.
+The optional ``else`` block is only executed if the ``for`` loop terminates
+normally. If the execution is halted with ``break``, the ``else`` block does
+not execute.
 
 .. code-block:: clj
 
     => (for [element [1 2 3]] (if (< element 3)
-    ...                             (print element) 
+    ...                             (print element)
     ...                             (break))
     ...    (else (print "loop finished")))
     1
@@ -635,6 +754,25 @@ normally. If the execution is halted with `break`, the `else` does not execute.
     loop finished
 
 
+genexpr
+-------
+
+``genexpr`` is used to create generator expressions. It takes two or three
+parameters. The first parameter is the expression controlling the return value,
+while the second is used to select items from a list. The third and optional
+parameter can be used to filter out some of the items in the list based on a
+conditional expression. ``genexpr`` is similar to ``list-comp``, except it
+returns an iterable that evaluates values one by one instead of evaluating them
+immediately.
+
+.. code-block:: hy
+
+    => (def collection (range 10))
+    => (def filtered (genexpr x [x collection] (even? x)))
+    => (list filtered)
+    [0, 2, 4, 6, 8]
+
+
 .. _gensym:
 
 gensym
@@ -642,8 +780,8 @@ gensym
 
 .. versionadded:: 0.9.12
 
-`gensym` form is used to generate a unique symbol to allow writing macros
-without accidental variable name clashes.
+``gensym`` is used to generate a unique symbol that allows macros to be
+written without accidental variable name clashes.
 
 .. code-block:: clj
 
@@ -660,37 +798,37 @@ without accidental variable name clashes.
 get
 ---
 
-`get` form is used to access single elements in lists and dictionaries. `get`
-takes two parameters, the `datastructure` and the `index` or `key` of the item.
-It will then return the corresponding value from the dictionary or the list. 
-Example usages:
+``get`` is used to access single elements in lists and dictionaries. ``get``
+takes two parameters: the *data structure* and the *index* or *key* of the
+item. It will then return the corresponding value from the dictionary or the
+list. Example usage:
 
 .. code-block:: clj
 
-   => (let [[animals {"dog" "bark" "cat" "meow"}]
-   ...      [numbers ["zero" "one" "two" "three"]]]
+   => (let [animals {"dog" "bark" "cat" "meow"}
+   ...      numbers ["zero" "one" "two" "three"]]
    ...  (print (get animals "dog"))
    ...  (print (get numbers 2)))
    bark
    two
 
-.. note:: `get` raises a KeyError if a dictionary is queried for a non-existing
-          key.
+.. note:: ``get`` raises a KeyError if a dictionary is queried for a
+          non-existing key.
 
-.. note:: `get` raises an IndexError if a list or a tuple is queried for an index
-          that is out of bounds.
+.. note:: ``get`` raises an IndexError if a list or a tuple is queried for an
+          index that is out of bounds.
 
 
 global
 ------
 
-`global` can be used to mark a symbol as global. This allows the programmer to
+``global`` can be used to mark a symbol as global. This allows the programmer to
 assign a value to a global symbol. Reading a global symbol does not require the
-`global` keyword, just the assigning does.
+``global`` keyword -- only assigning it does.
 
-Following example shows how global `a` is assigned a value in a function and later
-on printed on another function. Without the `global` keyword, the second function
-would thrown a `NameError`.
+The following example shows how the global symbol ``a`` is assigned a value in a
+function and is later on printed in another function. Without the ``global``
+keyword, the second function would have raised a ``NameError``.
 
 .. code-block:: clj
 
@@ -704,39 +842,96 @@ would thrown a `NameError`.
     (set-a 5)
     (print-a)
 
-if / if-not
------------
+if / if* / if-not
+-----------------
 
-the `if` form is used to conditionally select code to be executed. It has to
-contain the condition block and the block to be executed if the condition
-evaluates `True`. Optionally it may contain a block that is executed in case
-the evaluation of the condition is `False`. The `if-not` form (*new in
-0.9.13*) is similar, but the first block after the test will be
-executed when the test fails, while the other, conditional one, when
-the test succeeds - opposite of the order of the `if` form.
+.. versionadded:: 0.10.0
+   if-not
+
+``if / if* / if-not`` respect Python *truthiness*, that is, a *test* fails if it
+evaluates to a "zero" (including values of ``len`` zero, ``nil``, and
+``false``), and passes otherwise, but values with a ``__bool__`` method
+(``__nonzero__`` in Python 2) can overrides this.
+
+The ``if`` macro is for conditionally selecting an expression for evaluation.
+The result of the selected expression becomes the result of the entire ``if``
+form. ``if`` can select a group of expressions with the help of a ``do`` block.
+
+``if`` takes any number of alternating *test* and *then* expressions, plus an
+optional *else* expression at the end, which defaults to ``nil``. ``if`` checks
+each *test* in turn, and selects the *then* corresponding to the first passed
+test. ``if`` does not evaluate any expressions following its selection, similar
+to the ``if/elif/else`` control structure from Python. If no tests pass, ``if``
+selects *else*.
+
+The ``if*`` special form is restricted to 2 or 3 arguments, but otherwise works
+exactly like ``if`` (which expands to nested ``if*`` forms), so there is
+generally no reason to use it directly.
+
+``if-not`` is similar to ``if*`` but the second expression will be executed
+when the condition fails while the third and final expression is executed when
+the test succeeds -- the opposite order of ``if*``. The final expression is
+again optional and defaults to ``nil``.
 
 Example usage:
 
 .. code-block:: clj
 
-    (if (money-left? account)
-      (print "lets go shopping")
-      (print "lets go and work"))
+    (print (if (< n 0.0) "negative"
+               (= n 0.0) "zero"
+               (> n 0.0) "positive"
+               "not a number"))
+
+    (if* (money-left? account)
+      (print "let's go shopping")
+      (print "let's go and work"))
 
     (if-not (money-left? account)
-      (print "lets go and work")
-      (print "lets go shopping"))
+      (print "let's go and work")
+      (print "let's go shopping"))
 
-Truth values of Python objects are respected. Values `None`, `False`, zero of
-any numeric type, empty sequence and empty dictionary are considered `False`.
-Everything else is considered `True`.
+
+
+lif and lif-not
+---------------------------------------
+
+.. versionadded:: 0.10.0
+
+.. versionadded:: 0.11.0
+   lif-not
+
+For those that prefer a more Lispy ``if`` clause, we have
+``lif``. This *only* considers ``None`` / ``nil`` to be false! All other
+"false-ish" Python values are considered true. Conversely, we have
+``lif-not`` in parallel to ``if`` and ``if-not`` which
+reverses the comparison.
+
+
+.. code-block:: clj
+
+    => (lif True "true" "false")
+    "true"
+    => (lif False "true" "false")
+    "true"
+    => (lif 0 "true" "false")
+    "true"
+    => (lif nil "true" "false")
+    "false"
+    => (lif None "true" "false")
+    "false"
+    => (lif-not nil "true" "false")
+    "true"
+    => (lif-not None "true" "false")
+    "true"
+    => (lif-not False "true" "false")
+    "false"
 
 
 import
 ------
 
-`import` is used to import modules, like in Python. There are several forms
-of import you can use.
+``import`` is used to import modules, like in Python. There are several ways
+that ``import`` can be used.
 
 .. code-block:: clj
 
@@ -766,39 +961,13 @@ of import you can use.
     (import [sys [*]])
 
 
-kwapply
--------
-
-`kwapply` can be used to supply keyword arguments to a function.
-
-For example:
-
-.. code-block:: clj
-
-    => (defn rent-car [&kwargs kwargs]
-    ...  (cond [(in :brand kwargs) (print "brand:" (:brand kwargs))]
-    ...        [(in :model kwargs) (print "model:" (:model kwargs))]))
-
-    => (kwapply (rent-car) {:model "T-Model"})
-    model: T-Model
-
-    => (defn total-purchase [price amount &optional [fees 1.05] [vat 1.1]] 
-    ...  (* price amount fees vat))
-
-    => (total-purchase 10 15)
-    173.25
-
-    => (kwapply (total-purchase 10 15) {"vat" 1.05})
-    165.375
-
-
 lambda / fn
 -----------
 
-`lambda` and `fn` can be used to define an anonymous function. The parameters are
-similar to `defn`: first parameter is vector of parameters and the rest is the
-body of the function. lambda returns a new function. In the example an anonymous
-function is defined and passed to another function for filtering output.
+``lambda`` and ``fn`` can be used to define an anonymous function. The parameters are
+similar to ``defn``: the first parameter is vector of parameters and the rest is the
+body of the function. ``lambda`` returns a new function. In the following example, an
+anonymous function is defined and passed to another function for filtering output.
 
 .. code-block:: clj
 
@@ -815,13 +984,17 @@ function is defined and passed to another function for filtering output.
     Dave
 
 Just as in normal function definitions, if the first element of the
-body is a string, it serves as docstring.  This is useful for giving
+body is a string, it serves as a docstring. This is useful for giving
 class methods docstrings.
+
+.. code-block:: clj
 
     => (setv times-three
     ...   (fn [x]
     ...    "Multiplies input by three and returns the result."
     ...    (* x 3)))
+
+This can be confirmed via Python's built-in ``help`` function::
 
     => (help times-three)
     Help on function times_three:
@@ -830,42 +1003,56 @@ class methods docstrings.
     Multiplies input by three and returns result
     (END)
 
+last
+-----------
+
+.. versionadded:: 0.11.0
+
+``last`` can be used for accessing the last element of a collection:
+
+.. code-block:: clj
+
+    => (last [2 4 6])
+    6
+
 
 let
 ---
 
-`let` is used to create lexically scoped variables. They are created at the
-beginning of `let` form and cease to exist after the form. The following
+``let`` is used to create lexically scoped variables. They are created at the
+beginning of the ``let`` form and cease to exist after the form. The following
 example showcases this behaviour:
 
 .. code-block:: clj
 
-    => (let [[x 5]] (print x) 
-    ...  (let [[x 6]] (print x)) 
+    => (let [x 5] (print x)
+    ...  (let [x 6] (print x))
     ...  (print x))
     5
     6
     5
 
-`let` macro takes two parameters: a vector defining `variables` and `body`,
-which is being executed. `variables` is a vector where each element is either
-a single variable or a vector defining a variable value pair. In case of a
-single variable, it is assigned value None, otherwise the supplied value is
-used.
+The ``let`` macro takes two parameters: a vector defining *variables*
+and the *body* which gets executed. *variables* is a vector of
+variable and value pairs.
+
+Note that the variable assignments are executed one by one, from left to right.
+The following example takes advantage of this:
 
 .. code-block:: clj
 
-    => (let [x [y 5]] (print x y))
-    None 5
+    => (let [x 5 
+             y (+ x 1)] (print x y))
+    5 6
 
 
 list-comp
 ---------
 
-`list-comp` performs list comprehensions. It takes two or three parameters.
+``list-comp`` performs list comprehensions. It takes two or three parameters.
 The first parameter is the expression controlling the return value, while
 the second is used to select items from a list. The third and optional
-parameter can be used to filter out some of the items in the list based on a 
+parameter can be used to filter out some of the items in the list based on a
 conditional expression. Some examples:
 
 .. code-block:: clj
@@ -881,12 +1068,50 @@ conditional expression. Some examples:
     [0, 2, 4, 6, 8]
 
 
+nonlocal
+--------
+
+.. versionadded:: 0.11.1
+
+**PYTHON 3.0 AND UP ONLY!**
+
+``nonlocal`` can be used to mark a symbol as not local to the current scope.
+The parameters are the names of symbols to mark as nonlocal.  This is necessary
+to modify variables through nested ``let`` or ``fn`` scopes:
+
+.. code-block:: clj
+
+    (let [x 0]
+      (for [y (range 10)]
+        (let [z (inc y)]
+          (nonlocal x)  ; allow the setv to "jump scope" to resolve x
+          (setv x (+ x y))))
+      x)
+
+    (defn some-function []
+      (let [x 0]
+        (register-some-callback
+          (fn [stuff]
+            (nonlocal x)
+            (setv x stuff)))))
+
+In the first example, without the call to ``(nonlocal x)``, this code would
+result in an UnboundLocalError being raised during the call to ``setv``.
+
+In the second example, without the call to ``(nonlocal x)``, the inner function
+would redefine ``x`` to ``stuff`` inside its local scope instead of overwriting
+the ``x`` in the outer function
+
+See `PEP3104 <https://www.python.org/dev/peps/pep-3104/>`_ for further
+information.
+
+
 not
 ---
 
-`not` form is used in logical expressions. It takes a single parameter and
-returns a reversed truth value. If `True` is given as a parameter, `False`
-will be returned and vice-versa. Examples for usage:
+``not`` is used in logical expressions. It takes a single parameter and
+returns a reversed truth value. If ``True`` is given as a parameter, ``False``
+will be returned, and vice-versa. Example usage:
 
 .. code-block:: clj
 
@@ -903,8 +1128,8 @@ will be returned and vice-versa. Examples for usage:
 or
 --
 
-`or` form is used in logical expressions. It takes at least two parameters. It
-will return the first non-false parameter. If no such value exist, the last
+``or`` is used in logical expressions. It takes at least two parameters. It
+will return the first non-false parameter. If no such value exists, the last
 parameter will be returned.
 
 .. code-block:: clj
@@ -918,44 +1143,35 @@ parameter will be returned.
     => (and False 1 True False)
     1
 
-.. note:: `or` shortcuts and stops evaluating parameters as soon as the first
-          true is encountered. However, in the current implementation of Hy
-          statements are executed as soon as they are converted to expressions.
-          The following two examples demonstrates the difference.
+.. note:: ``or`` short-circuits and stops evaluating parameters as soon as the
+          first true value is encountered.
 
 .. code-block:: clj
 
     => (or True (print "hello"))
-    hello
     True
-
-    => (defn side-effects [x] (print "I can has" x) x)
-    => (or (side-effects 42) (side-effects False))
-    I can has 42
-    42
 
 
 print
 -----
 
-the `print` form is used to output on screen. Example usage:
+``print`` is used to output on screen. Example usage:
 
 .. code-block:: clj
 
     (print "Hello world!")
 
-.. note:: `print` always returns None
+.. note:: ``print`` always returns ``None``.
 
 
 quasiquote
 ----------
 
-`quasiquote` allows you to quote a form, but also to
-selectively evaluate expressions, expressions inside a `quasiquote`
-can be selectively evaluated using `unquote` (~). The evaluated form can
-also be spliced using `unquote-splice` (~@). Quasiquote can be also written
-using the backquote (`) symbol.
-
+``quasiquote`` allows you to quote a form, but also selectively evaluate
+expressions. Expressions inside a ``quasiquote`` can be selectively evaluated
+using ``unquote`` (``~``). The evaluated form can also be spliced using
+``unquote-splice`` (``~@``). Quasiquote can be also written using the backquote
+(`````) symbol.
 
 .. code-block:: clj
 
@@ -969,9 +1185,8 @@ using the backquote (`) symbol.
 quote
 -----
 
-`quote` returns the form passed to it without evaluating. `quote` can
-be alternatively written using the (') symbol
-
+``quote`` returns the form passed to it without evaluating it. ``quote`` can
+alternatively be written using the apostrophe (``'``) symbol.
 
 .. code-block:: clj
 
@@ -986,11 +1201,11 @@ be alternatively written using the (') symbol
 require
 -------
 
-`require` is used to import macros from a given module. It takes at least one
+``require`` is used to import macros from a given module. It takes at least one
 parameter specifying the module which macros should be imported. Multiple
-modules can be imported with a single `require`.
+modules can be imported with a single ``require``.
 
-The following example will import macros from `module-1` and `module-2`:
+The following example will import macros from ``module-1`` and ``module-2``:
 
 .. code-block:: clj
 
@@ -1000,8 +1215,8 @@ The following example will import macros from `module-1` and `module-2`:
 rest / cdr
 ----------
 
-`rest` and `cdr` return the collection passed as an argument without the first
-element:
+``rest`` and ``cdr`` return the collection passed as an argument without the
+first element:
 
 .. code-block:: clj
 
@@ -1009,105 +1224,118 @@ element:
     [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 
-slice
+set-comp
+--------
+
+``set-comp`` is used to create sets. It takes two or three parameters.
+The first parameter is for controlling the return value, while the second is
+used to select items from a sequence. The third and optional parameter can be
+used to filter out some of the items in the sequence based on a conditional
+expression.
+
+.. code-block:: hy
+
+    => (setv data [1 2 3 4 5 2 3 4 5 3 4 5])
+    => (set-comp x [x data] (odd? x))
+    {1, 3, 5}
+
+
+cut
 -----
 
-`slice` can be used to take a subset of a list and create a new list from it.
-The form takes at least one parameter specifying the list to slice. Two
+``cut`` can be used to take a subset of a list and create a new list from it.
+The form takes at least one parameter specifying the list to cut. Two
 optional parameters can be used to give the start and end position of the
-subset. If they are not supplied, default value of None will be used instead.
-Third optional parameter is used to control step between the elements.
+subset. If they are not supplied, the default value of ``None`` will be used
+instead. The third optional parameter is used to control step between the elements.
 
-`slice` follows the same rules as the Python counterpart. Negative indecies are
-counted starting from the end of the list.
-Some examples of
-usage:
+``cut`` follows the same rules as its Python counterpart. Negative indices are
+counted starting from the end of the list. Some example usage:
 
 .. code-block:: clj
 
     => (def collection (range 10))
 
-    => (slice collection)
+    => (cut collection)
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
-    => (slice collection 5)
+    => (cut collection 5)
     [5, 6, 7, 8, 9]
 
-    => (slice collection 2 8)
+    => (cut collection 2 8)
     [2, 3, 4, 5, 6, 7]
 
-    => (slice collection 2 8 2)
+    => (cut collection 2 8 2)
     [2, 4, 6]
 
-    => (slice collection -4 -2)
+    => (cut collection -4 -2)
     [6, 7]
 
 
-throw / raise
+raise
 -------------
 
-the `throw` or `raise` forms can be used to raise an Exception at runtime.
-
-
-Example usage
+The ``raise`` form can be used to raise an ``Exception`` at
+runtime. Example usage:
 
 .. code-block:: clj
 
-    (throw)
+    (raise)
     ; re-rase the last exception
-    
-    (throw IOError)
-    ; Throw an IOError
-    
-    (throw (IOError "foobar"))
-    ; Throw an IOError("foobar")
+
+    (raise IOError)
+    ; raise an IOError
+
+    (raise (IOError "foobar"))
+    ; raise an IOError("foobar")
 
 
-`throw` can acccept a single argument (an `Exception` class or instance), or
-no arguments to re-raise the last Exception.
+``raise`` can accept a single argument (an ``Exception`` class or instance)
+or no arguments to re-raise the last ``Exception``.
 
 
 try
 ---
 
-the `try` form is used to start a `try` / `catch` block. The form is used
-as follows
+The ``try`` form is used to start a ``try`` / ``except`` block. The form is
+used as follows:
 
 .. code-block:: clj
 
     (try
         (error-prone-function)
-        (catch [e ZeroDivisionError] (print "Division by zero"))
+        (except [e ZeroDivisionError] (print "Division by zero"))
         (else (print "no errors"))
         (finally (print "all done")))
 
-`try` must contain at least one `catch` block, and may optionally have an
-`else` or `finally` block. If an error is raised with a matching catch
-block during execution of `error-prone-function` then that catch block will
-be executed. If no errors are raised the `else` block is executed. Regardless
-if an error was raised or not, the `finally` block is executed as last.
+``try`` must contain at least one ``except`` block, and may optionally include
+an ``else`` or ``finally`` block. If an error is raised with a matching except
+block during the execution of ``error-prone-function``, that ``except`` block
+will be executed. If no errors are raised, the ``else`` block is executed. The
+``finally`` block will be executed last regardless of whether or not an error
+was raised.
 
 
 unless
 ------
 
-`unless` macro is a shorthand for writing a if-statement that checks if the
-given conditional is False. The following shows how the macro expands into code.
+The ``unless`` macro is a shorthand for writing an ``if`` statement that checks if
+the given conditional is ``False``. The following shows the expansion of this macro.
 
 .. code-block:: clj
 
     (unless conditional statement)
 
-    (if conditional 
-      None 
+    (if conditional
+      None
       (do statement))
 
 
 unquote
 -------
 
-Within a quasiquoted form, `unquote` forces evaluation of a symbol. `unquote`
-is aliased to the `~` symbol.
+Within a quasiquoted form, ``unquote`` forces evaluation of a symbol. ``unquote``
+is aliased to the tilde (``~``) symbol.
 
 .. code-block:: clj
 
@@ -1122,10 +1350,10 @@ is aliased to the `~` symbol.
 unquote-splice
 --------------
 
-`unquote-splice` forces the evaluation of a symbol within a quasiquoted form,
-much like `unquote`. `unquote-splice` can only be used when the symbol being
-unquoted contains an iterable value, as it "splices" that iterable into the
-quasiquoted form. `unquote-splice` is aliased to the `~@` symbol.
+``unquote-splice`` forces the evaluation of a symbol within a quasiquoted form,
+much like ``unquote``. ``unquote-splice`` can only be used when the symbol
+being unquoted contains an iterable value, as it "splices" that iterable into
+the quasiquoted form. ``unquote-splice`` is aliased to the ``~@`` symbol.
 
 .. code-block:: clj
 
@@ -1137,13 +1365,12 @@ quasiquoted form. `unquote-splice` is aliased to the `~@` symbol.
     ;=> (u'+' 1L 2L 3L 4L)
 
 
-
 when
 ----
 
-`when` is similar to `unless`, except it tests when the given conditional is
-True. It is not possible to have an `else` block in `when` macro. The following
-shows how the macro is expanded into code.
+``when`` is similar to ``unless``, except it tests when the given conditional is
+``True``. It is not possible to have an ``else`` block in a ``when`` macro. The
+following shows the expansion of the macro.
 
 .. code-block:: clj
 
@@ -1151,63 +1378,105 @@ shows how the macro is expanded into code.
 
     (if conditional (do statement))
 
+
 while
 -----
 
-`while` form is used to execute a single or more blocks as long as a condition
-is being met.
-
-The following example will output "hello world!" on screen indefinetely:
+``while`` is used to execute one or more blocks as long as a condition is met.
+The following example will output "Hello world!" to the screen indefinitely:
 
 .. code-block:: clj
 
-    (while True (print "hello world!"))
+    (while True (print "Hello world!"))
 
 
 with
 ----
 
-`with` is used to wrap execution of a block with a context manager. The context
-manager can then set up the local system and tear it down in a controlled
-manner. Typical example of using `with` is processing files. `with`  can bind
-context to an argument or ignore it completely, as shown below:
+``with`` is used to wrap the execution of a block within a context manager. The
+context manager can then set up the local system and tear it down in a controlled
+manner. The archetypical example of using ``with`` is when processing files.
+``with`` can bind context to an argument or ignore it completely, as shown below:
 
 .. code-block:: clj
 
-    (with [[arg (expr)]] block)
+    (with [arg (expr)] block)
 
-    (with [[(expr)]] block)
+    (with [(expr)] block)
 
-    (with [[arg (expr)] [(expr)]] block)
+    (with [arg (expr) (expr)] block)
 
-The following example will open file `NEWS` and print its content on screen. The
-file is automatically closed after it has been processed.
+The following example will open the ``NEWS`` file and print its content to the
+screen. The file is automatically closed after it has been processed.
 
 .. code-block:: clj
 
-    (with [[f (open "NEWS")]] (print (.read f)))
+    (with [f (open "NEWS")] (print (.read f)))
 
 
 with-decorator
 --------------
 
-`with-decorator` is used to wrap a function with another. The function performing
-decoration should accept a single value, the function being decorated and return
-a new function. `with-decorator` takes two parameters, the function performing
-decoration and the function being decorated.
-
-In the following example, `inc-decorator` is used to decorate function `addition`
-with a function that takes two parameters and calls the decorated function with
-values that are incremented by 1. When decorated `addition` is called with values
-1 and 1, the end result will be 4 (1+1 + 1+1).
+``with-decorator`` is used to wrap a function with another. The function
+performing the decoration should accept a single value: the function being
+decorated, and return a new function. ``with-decorator`` takes a minimum
+of two parameters: the function performing decoration and the function
+being decorated. More than one decorator function can be applied; they
+will be applied in order from outermost to innermost, ie. the first
+decorator will be the outermost one, and so on. Decorators with arguments
+are called just like a function call.
 
 .. code-block:: clj
 
-    => (defn inc-decorator [func] 
+   (with-decorator decorator-fun
+      (defn some-function [] ...)
+
+   (with-decorator decorator1 decorator2 ...
+      (defn some-function [] ...)
+
+   (with-decorator (decorator arg) ..
+      (defn some-function [] ...)
+
+
+In the following example, ``inc-decorator`` is used to decorate the function
+``addition`` with a function that takes two parameters and calls the
+decorated function with values that are incremented by 1. When
+the decorated ``addition`` is called with values 1 and 1, the end result
+will be 4 (``1+1 + 1+1``).
+
+.. code-block:: clj
+
+    => (defn inc-decorator [func]
     ...  (fn [value-1 value-2] (func (+ value-1 1) (+ value-2 1))))
+    => (defn inc2-decorator [func]
+    ...  (fn [value-1 value-2] (func (+ value-1 2) (+ value-2 2))))
+
     => (with-decorator inc-decorator (defn addition [a b] (+ a b)))
     => (addition 1 1)
     4
+    => (with-decorator inc2-decorator inc-decorator
+    ...	 (defn addition [a b] (+ a b)))
+    => (addition 1 1)
+    8
+
+
+#@
+~~
+
+.. versionadded:: 0.12.0
+
+The :ref:`reader macro<reader-macros>` ``#@`` can be used as a shorthand
+for ``with-decorator``. With ``#@``, the previous example becomes:
+
+.. code-block:: clj
+
+    => #@(inc-decorator (defn addition [a b] (+ a b)))
+    => (addition 1 1)
+    4
+    => #@(inc2-decorator inc-decorator
+    ...   (defn addition [a b] (+ a b)))
+    => (addition 1 1)
+    8
 
 
 .. _with-gensyms:
@@ -1217,21 +1486,21 @@ with-gensyms
 
 .. versionadded:: 0.9.12
 
-`with-gensym` form is used to generate a set of :ref:`gensym` for use
-in a macro.
+``with-gensym`` is used to generate a set of :ref:`gensym` for use in a macro.
+The following code:
 
-.. code-block:: clojure
+.. code-block:: hy
 
    (with-gensyms [a b c]
      ...)
 
 expands to:
 
-.. code-block:: clojure
+.. code-block:: hy
 
-   (let [[a (gensym)
-         [b (gensym)
-         [c (gensym)]]
+   (let [a (gensym)
+         b (gensym)
+         c (gensym)]
      ...)
 
 .. seealso::
@@ -1239,20 +1508,41 @@ expands to:
    Section :ref:`using-gensym`
 
 
+xor
+---
+
+.. versionadded:: 0.12.0
+
+``xor`` is used in logical expressions to perform exclusive or. It takes two
+parameters. It returns ``True`` if only of the parameters is ``True``. In all
+other cases ``False`` is returned. Example usage:
+
+.. code-block:: clj
+
+    => (xor True False)
+    True
+
+    => (xor True True)
+    False
+
+    => (xor [] [0])
+    True
+
+
 yield
 -----
 
-`yield` is used to create a generator object, that returns 1 or more values.
+``yield`` is used to create a generator object that returns one or more values.
 The generator is iterable and therefore can be used in loops, list
 comprehensions and other similar constructs.
 
-The function random-numbers shows how generators can be used to generate
+The function ``random-numbers`` shows how generators can be used to generate
 infinite series without consuming infinite amount of memory.
 
 .. code-block:: clj
 
     => (defn multiply [bases coefficients]
-    ...  (for [[(, base coefficient) (zip bases coefficients)]]
+    ...  (for [(, base coefficient) (zip bases coefficients)]
     ...   (yield (* base coefficient))))
 
     => (multiply (range 5) (range 5))
@@ -1264,26 +1554,18 @@ infinite series without consuming infinite amount of memory.
     => (import random)
     => (defn random-numbers [low high]
     ...  (while True (yield (.randint random low high))))
-    => (list-comp x [x (take 15 (random-numbers 1 50))])])
+    => (list-comp x [x (take 15 (random-numbers 1 50))])
     [7, 41, 6, 22, 32, 17, 5, 38, 18, 38, 17, 14, 23, 23, 19]
 
-.. _zipwith:
 
-zipwith
--------
+yield-from
+----------
 
 .. versionadded:: 0.9.13
 
-`zipwith` zips multiple lists and maps the given function over the result. It is
-equilavent to calling ``zip``, followed by calling ``map`` on the result.
+**PYTHON 3.3 AND UP ONLY!**
 
-In the following example, `zipwith` is used to add the contents of two lists
-together. The equilavent ``map`` and ``zip`` calls follow.
-
-.. code-block:: clj
-   
-   => (import operator.add)
-   => (zipwith operator.add [1 2 3] [4 5 6])   ; using zipwith
-   [5, 7, 9]
-   => (map operator.add (zip [1 2 3] [4 5 6])) ; using map+zip
-   [5, 7, 9]
+``yield-from`` is used to call a subgenerator.  This is useful if you
+want your coroutine to be able to delegate its processes to another
+coroutine, say, if using something fancy like
+`asyncio <http://docs.python.org/3.4/library/asyncio.html>`_.

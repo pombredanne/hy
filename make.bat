@@ -27,7 +27,9 @@ if "%1" == "help" (
 
 if "%1" == "docs" (
 :docs
-    echo.docs not yet supported under Windows
+    cd docs
+    make.bat html
+    cd ..
 goto :EOF
 )
 
@@ -70,8 +72,8 @@ goto :EOF
 
 if "%1" == "flake" (
 :flake
-    echo.flake8 hy
-    flake8 hy
+    echo.flake8 hy tests
+    flake8 hy tests
 goto :EOF
 )
 
@@ -85,7 +87,7 @@ goto :EOF
 if "%1" == "tox" (
 :tox
     call :venv
-    tox -e "py26,py27,py32,py33,flake8"
+    tox -e "py26,py27,py33,py34,flake8"
 goto :EOF
 )
 

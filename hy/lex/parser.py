@@ -30,8 +30,8 @@ from hy.models.expression import HyExpression
 from hy.models.float import HyFloat
 from hy.models.integer import HyInteger
 from hy.models.keyword import HyKeyword
-from hy.models.lambdalist import HyLambdaListKeyword
 from hy.models.list import HyList
+from hy.models.set import HySet
 from hy.models.string import HyString
 from hy.models.symbol import HySymbol
 
@@ -43,6 +43,22 @@ pg = ParserGenerator(
     [rule.name for rule in lexer.rules] + ['$end'],
     cache_id="hy_parser"
 )
+
+
+def hy_symbol_mangle(p):
+    if p.startswith("*") and p.endswith("*") and p not in ("*", "**"):
+        p = p[1:-1].upper()
+
+    if "-" in p and p != "-":
+        p = p.replace("-", "_")
+
+    if p.endswith("?") and p != "?":
+        p = "is_%s" % (p[:-1])
+
+    if p.endswith("!") and p != "!":
+        p = "%s_bang" % (p[:-1])
+
+    return p
 
 
 def set_boundaries(fun):
@@ -153,6 +169,7 @@ def list_contents_single(p):
 @pg.production("term : paren")
 @pg.production("term : dict")
 @pg.production("term : list")
+@pg.production("term : set")
 @pg.production("term : string")
 def term(p):
     return p[0]
@@ -189,6 +206,18 @@ def hash_reader(p):
     str_object = HyString(st)
     expr = p[1]
     return HyExpression([HySymbol("dispatch_reader_macro"), str_object, expr])
+
+
+@pg.production("set : HLCURLY list_contents RCURLY")
+@set_boundaries
+def t_set(p):
+    return HySet(p[1])
+
+
+@pg.production("set : HLCURLY RCURLY")
+@set_boundaries
+def empty_set(p):
+    return HySet([])
 
 
 @pg.production("dict : LCURLY list_contents RCURLY")
@@ -237,6 +266,12 @@ def t_string(p):
     return uni_hystring(s)
 
 
+@pg.production("string : PARTIAL_STRING")
+def t_partial_string(p):
+    # Any unterminated string requires more input
+    raise PrematureEndOfInput("Premature end of input")
+
+
 @pg.production("identifier : IDENTIFIER")
 @set_boundaries
 def t_identifier(p):
@@ -246,6 +281,14 @@ def t_identifier(p):
         return HyInteger(obj)
     except ValueError:
         pass
+
+    if '/' in obj:
+        try:
+            lhs, rhs = obj.split('/')
+            return HyExpression([HySymbol('fraction'), HyInteger(lhs),
+                                 HyInteger(rhs)])
+        except ValueError:
+            pass
 
     try:
         return HyFloat(obj)
@@ -262,7 +305,6 @@ def t_identifier(p):
         "true": "True",
         "false": "False",
         "nil": "None",
-        "null": "None",
     }
 
     if obj in table:
@@ -271,22 +313,7 @@ def t_identifier(p):
     if obj.startswith(":"):
         return HyKeyword(obj)
 
-    if obj.startswith("&"):
-        return HyLambdaListKeyword(obj)
-
-    def mangle(p):
-        if p.startswith("*") and p.endswith("*") and p not in ("*", "**"):
-            p = p[1:-1].upper()
-
-        if "-" in p and p != "-":
-            p = p.replace("-", "_")
-
-        if p.endswith("?") and p != "?":
-            p = "is_%s" % (p[:-1])
-
-        return p
-
-    obj = ".".join([mangle(part) for part in obj.split(".")])
+    obj = ".".join([hy_symbol_mangle(part) for part in obj.split(".")])
 
     return HySymbol(obj)
 
