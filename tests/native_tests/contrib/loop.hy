@@ -1,4 +1,8 @@
-(require hy.contrib.loop)
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
+
+(require [hy.contrib.loop [loop]])
 (import sys)
 
 (defn tco-sum [x y]
@@ -19,15 +23,15 @@
   (try
    (setv n (non-tco-sum 100 10000))
    (except [e RuntimeError]
-     (assert true))
+     (assert True))
    (else
-    (assert false)))
+    (assert False)))
 
   ;; tco-sum should not fail
   (try
    (setv n (tco-sum 100 10000))
    (except [e RuntimeError]
-     (assert false))
+     (assert False))
    (else
     (assert (= n 10100)))))
 
@@ -41,6 +45,10 @@
   (try
    (bad-recur 3)
    (except [e TypeError]
-     (assert true))
+     (assert True))
    (else
-    (assert false))))
+    (assert False))))
+
+(defn test-recur-string []
+  "test that `loop` doesn't touch a string named `recur`"
+  (assert (= (loop [] (+ "recur" "1")) "recur1")))

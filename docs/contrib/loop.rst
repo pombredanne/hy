@@ -39,13 +39,13 @@ rebinds the variables set in the recursion point and sends code
 execution back to that recursion point. If ``recur`` is used in a
 non-tail position, an exception is raised.
 
-Usage: `(loop bindings &rest body)`
+Usage: ``(loop bindings &rest body)``
 
 Example:
 
 .. code-block:: hy
 
-    (require hy.contrib.loop)
+    (require [hy.contrib.loop [loop]])
 
     (defn factorial [n]
       (loop [[i n] [acc 1]]

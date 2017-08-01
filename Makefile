@@ -2,7 +2,6 @@ pip_url=https://bootstrap.pypa.io/get-pip.py
 python=python
 pip=pip
 coveralls=coveralls
-nose=nosetests
 
 all:
 	@echo "No default step. Use setup.py"
@@ -23,7 +22,7 @@ all:
 	@echo ""
 
 docs:
-	make -C docs html
+	$(MAKE) -C docs html
 
 upload: r
 	python setup.py sdist upload
@@ -41,13 +40,13 @@ endif
 dev: test flake
 
 test: venv
-	nosetests -sv
+	pytest
 
 tox: venv
 	tox
 
 flake:
-	flake8 hy tests
+	flake8 hy tests --ignore=E121,E123,E126,E226,E24,E704,W503,E302,E305,E701
 
 clear:
 	clear
@@ -72,10 +71,10 @@ coveralls:
 
 clean:
 	@find . -name "*.pyc" -exec rm {} \;
-	@find -name __pycache__ -delete
+	@find . -name __pycache__ -delete
 	@${RM} -r -f .tox
 	@${RM} -r -f dist
 	@${RM} -r -f *.egg-info
 	@${RM} -r -f docs/_build
 
-.PHONY: docs
+.PHONY: all docs upload full venv dev test tox flake clear d diff r python coveralls clean

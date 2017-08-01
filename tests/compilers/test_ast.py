@@ -1,32 +1,15 @@
-# Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-# Copyright (c) 2013 Julien Danjou <julien@danjou.info>
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Copyright 2017 the authors.
+# This file is part of Hy, which is free software licensed under the Expat
+# license. See the LICENSE.
 
 from __future__ import unicode_literals
 
 from hy import HyString
 from hy.models import HyObject
 from hy.compiler import hy_compile
+from hy.importer import import_buffer_to_hst
 from hy.errors import HyCompileError, HyTypeError
 from hy.lex.exceptions import LexException
-from hy.lex import tokenize
 from hy._compat import PY3
 
 import ast
@@ -42,12 +25,12 @@ def _ast_spotcheck(arg, root, secondary):
 
 
 def can_compile(expr):
-    return hy_compile(tokenize(expr), "__main__")
+    return hy_compile(import_buffer_to_hst(expr), "__main__")
 
 
 def cant_compile(expr):
     try:
-        hy_compile(tokenize(expr), "__main__")
+        hy_compile(import_buffer_to_hst(expr), "__main__")
         assert False
     except HyTypeError as e:
         # Anything that can't be compiled should raise a user friendly
@@ -65,8 +48,10 @@ def cant_compile(expr):
 
 def test_ast_bad_type():
     "Make sure AST breakage can happen"
+    class C:
+        pass
     try:
-        hy_compile("foo", "__main__")
+        hy_compile(C(), "__main__")
         assert True is False
     except HyCompileError:
         pass
@@ -102,7 +87,7 @@ def test_ast_invalid_unary_op():
 def test_ast_bad_while():
     "Make sure AST can't compile invalid while"
     cant_compile("(while)")
-    cant_compile("(while (true))")
+    cant_compile("(while (True))")
 
 
 def test_ast_good_do():
@@ -130,23 +115,26 @@ def test_ast_bad_raise():
 
 def test_ast_good_try():
     "Make sure AST can compile valid try"
-    can_compile("(try)")
-    can_compile("(try 1)")
     can_compile("(try 1 (except) (else 1))")
-    can_compile("(try 1 (else 1) (except))")
-    can_compile("(try 1 (finally 1) (except))")
     can_compile("(try 1 (finally 1))")
     can_compile("(try 1 (except) (finally 1))")
-    can_compile("(try 1 (except) (finally 1) (else 1))")
+    can_compile("(try 1 (except [x]) (except [y]) (finally 1))")
     can_compile("(try 1 (except) (else 1) (finally 1))")
+    can_compile("(try 1 (except [x]) (except [y]) (else 1) (finally 1))")
 
 
 def test_ast_bad_try():
     "Make sure AST can't compile invalid try"
+    cant_compile("(try)")
+    cant_compile("(try 1)")
     cant_compile("(try 1 bla)")
     cant_compile("(try 1 bla bla)")
+    cant_compile("(try (do bla bla))")
     cant_compile("(try (do) (else 1) (else 2))")
     cant_compile("(try 1 (else 1))")
+    cant_compile("(try 1 (else 1) (except))")
+    cant_compile("(try 1 (finally 1) (except))")
+    cant_compile("(try 1 (except) (finally 1) (else 1))")
 
 
 def test_ast_good_except():
@@ -175,7 +163,7 @@ def test_ast_good_assert():
     can_compile("(assert 1 \"Assert label\")")
     can_compile("(assert 1 (+ \"spam \" \"eggs\"))")
     can_compile("(assert 1 12345)")
-    can_compile("(assert 1 nil)")
+    can_compile("(assert 1 None)")
     can_compile("(assert 1 (+ 2 \"incoming eggsception\"))")
 
 
@@ -225,13 +213,13 @@ def test_ast_bad_defclass():
 
 def test_ast_good_lambda():
     "Make sure AST can compile valid lambda"
-    can_compile("(lambda [])")
-    can_compile("(lambda [] 1)")
+    can_compile("(fn [])")
+    can_compile("(fn [] 1)")
 
 
 def test_ast_bad_lambda():
     "Make sure AST can't compile invalid lambda"
-    cant_compile("(lambda)")
+    cant_compile("(fn)")
 
 
 def test_ast_good_yield():
@@ -247,6 +235,35 @@ def test_ast_bad_yield():
 def test_ast_good_import_from():
     "Make sure AST can compile valid selective import"
     can_compile("(import [x [y]])")
+
+
+def test_ast_require():
+    "Make sure AST respects (require) syntax"
+    can_compile("(require tests.resources.tlib)")
+    can_compile("(require [tests.resources.tlib [qplah parald]])")
+    can_compile("(require [tests.resources.tlib [*]])")
+    can_compile("(require [tests.resources.tlib :as foobar])")
+    can_compile("(require [tests.resources.tlib [qplah :as quiz]])")
+    can_compile("(require [tests.resources.tlib [qplah :as quiz parald]])")
+    cant_compile("(require [tests.resources.tlib])")
+    cant_compile("(require [tests.resources.tlib [* qplah]])")
+    cant_compile("(require [tests.resources.tlib [qplah *]])")
+    cant_compile("(require [tests.resources.tlib [* *]])")
+
+
+def test_ast_no_pointless_imports():
+    def contains_import_from(code):
+        return any([isinstance(node, ast.ImportFrom)
+                   for node in can_compile(code).body])
+    # `reduce` is a builtin in Python 2, but not Python 3.
+    # The version of `map` that returns an iterator is a builtin in
+    # Python 3, but not Python 2.
+    if PY3:
+        assert contains_import_from("reduce")
+        assert not contains_import_from("map")
+    else:
+        assert not contains_import_from("reduce")
+        assert contains_import_from("map")
 
 
 def test_ast_good_get():
@@ -319,22 +336,6 @@ def test_ast_invalid_for():
     cant_compile("(for* [a 1] (else 1 2))")
 
 
-def test_ast_valid_let():
-    "Make sure AST can compile valid let"
-    can_compile("(let [a b])")
-    can_compile("(let [a 1])")
-    can_compile("(let [a 1 b nil])")
-
-
-def test_ast_invalid_let():
-    "Make sure AST can't compile invalid let"
-    cant_compile("(let 1)")
-    cant_compile("(let [1])")
-    cant_compile("(let [a 1 2])")
-    cant_compile("(let [a])")
-    cant_compile("(let [1])")
-
-
 def test_ast_expression_basics():
     """ Ensure basic AST expression conversion works. """
     code = can_compile("(foo bar)").body[0]
@@ -356,9 +357,11 @@ def test_ast_expression_basics():
 
 def test_ast_anon_fns_basics():
     """ Ensure anon fns work. """
-    code = can_compile("(fn (x) (* x x))").body[0]
+    code = can_compile("(fn (x) (* x x))").body[0].value
+    assert type(code) == ast.Lambda
+    code = can_compile("(fn (x) (print \"multiform\") (* x x))").body[0]
     assert type(code) == ast.FunctionDef
-    code = can_compile("(fn (x))").body[0]
+    can_compile("(fn (x))")
     cant_compile("(fn)")
 
 
@@ -397,6 +400,7 @@ def test_lambda_list_keywords_rest():
     """ Ensure we can compile functions with lambda list keywords."""
     can_compile("(fn (x &rest xs) (print xs))")
     cant_compile("(fn (x &rest xs &rest ys) (print xs))")
+    can_compile("(fn (&optional a &rest xs) (print xs))")
 
 
 def test_lambda_list_keywords_key():
@@ -410,12 +414,13 @@ def test_lambda_list_keywords_kwargs():
     """ Ensure we can compile functions with &kwargs."""
     can_compile("(fn (x &kwargs kw) (list x kw))")
     cant_compile("(fn (x &kwargs xs &kwargs ys) (list x xs ys))")
+    can_compile("(fn (&optional x &kwargs kw) (list x kw))")
 
 
 def test_lambda_list_keywords_kwonly():
     """Ensure we can compile functions with &kwonly if we're on Python
     3, or fail with an informative message on Python 2."""
-    kwonly_demo = "(fn [&kwonly a [b 2]] (print a b))"
+    kwonly_demo = "(fn [&kwonly a [b 2]] (print 1) (print a b))"
     if PY3:
         code = can_compile(kwonly_demo)
         for i, kwonlyarg_name in enumerate(('a', 'b')):
@@ -457,7 +462,7 @@ def test_ast_unicode_strings():
         hy_s.start_line = hy_s.end_line = 0
         hy_s.start_column = hy_s.end_column = 0
 
-        code = hy_compile([hy_s], "__main__")
+        code = hy_compile(hy_s, "__main__")
 
         # code == ast.Module(body=[ast.Expr(value=ast.Str(s=xxx))])
         return code.body[0].value.s
@@ -467,12 +472,21 @@ def test_ast_unicode_strings():
     assert _compile_string("\xc3\xa9") == "\xc3\xa9"
 
 
+def test_ast_unicode_vs_bytes():
+    def f(x): return can_compile(x).body[0].value.s
+    assert f('"hello"') == u"hello"
+    assert type(f('"hello"')) is (str if PY3 else unicode)  # noqa
+    assert f('b"hello"') == (eval('b"hello"') if PY3 else "hello")
+    assert type(f('b"hello"')) == (bytes if PY3 else str)
+    assert f('b"\\xa0"') == (bytes([160]) if PY3 else chr(160))
+
+
 def test_compile_error():
     """Ensure we get compile error in tricky cases"""
     try:
         can_compile("(fn [] (in [1 2 3]))")
     except HyTypeError as e:
-        assert(e.message == "`in' needs at least 2 arguments, got 1.")
+        assert(e.message == "`in' needs 2 arguments, got 1")
     else:
         assert(False)
 
@@ -526,6 +540,15 @@ def test_attribute_access():
     cant_compile("(. foo bar baz [0] quux {frob})")
 
 
+def test_attribute_empty():
+    """Ensure using dot notation with a non-expression is an error"""
+    cant_compile(".")
+    cant_compile("foo.")
+    cant_compile(".foo")
+    cant_compile('"bar".foo')
+    cant_compile('[2].foo')
+
+
 def test_cons_correct():
     """Ensure cons gets compiled correctly"""
     can_compile("(cons a b)")
@@ -555,7 +578,7 @@ def test_defn():
 
 def test_setv_builtins():
     """Ensure that assigning to a builtin fails, unless in a class"""
-    cant_compile("(setv nil 42)")
+    cant_compile("(setv None 42)")
     cant_compile("(defn get [&rest args] 42)")
     can_compile("(defclass A [] (defn get [self] 42))")
     can_compile("""
@@ -565,3 +588,8 @@ def test_setv_builtins():
         (defn get [self] 42))
       (defn if* [self] 0))
     """)
+
+
+def test_lots_of_comment_lines():
+    # https://github.com/hylang/hy/issues/1313
+    can_compile(1000 * ";\n")

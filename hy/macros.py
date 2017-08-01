@@ -1,27 +1,9 @@
-# Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Copyright 2017 the authors.
+# This file is part of Hy, which is free software licensed under the Expat
+# license. See the LICENSE.
 
 from inspect import getargspec, formatargspec
-from hy.models import replace_hy_obj, wrap_value
-from hy.models.expression import HyExpression
-from hy.models.string import HyString
+from hy.models import replace_hy_obj, HyExpression, HySymbol
 
 from hy.errors import HyTypeError, HyMacroExpansionError
 
@@ -36,7 +18,7 @@ EXTRA_MACROS = [
 ]
 
 _hy_macros = defaultdict(dict)
-_hy_reader = defaultdict(dict)
+_hy_tag = defaultdict(dict)
 
 
 def macro(name):
@@ -52,8 +34,14 @@ def macro(name):
 
     """
     def _(fn):
-        argspec = getargspec(fn)
-        fn._hy_macro_pass_compiler = argspec.keywords is not None
+        try:
+            argspec = getargspec(fn)
+            fn._hy_macro_pass_compiler = argspec.keywords is not None
+        except Exception:
+            # An exception might be raised if fn has arguments with
+            # names that are invalid in Python.
+            fn._hy_macro_pass_compiler = False
+
         module_name = fn.__module__
         if module_name.startswith("hy.core"):
             module_name = None
@@ -62,8 +50,8 @@ def macro(name):
     return _
 
 
-def reader(name):
-    """Decorator to define a reader macro called `name`.
+def tag(name):
+    """Decorator to define a tag macro called `name`.
 
     This stores the macro `name` in the namespace for the module where it is
     defined.
@@ -71,35 +59,49 @@ def reader(name):
     If the module where it is defined is in `hy.core`, then the macro is stored
     in the default `None` namespace.
 
-    This function is called from the `defreader` special form in the compiler.
+    This function is called from the `deftag` special form in the compiler.
 
     """
     def _(fn):
         module_name = fn.__module__
         if module_name.startswith("hy.core"):
             module_name = None
-        _hy_reader[module_name][name] = fn
+        _hy_tag[module_name][name] = fn
 
         return fn
     return _
 
 
-def require(source_module, target_module):
-    """Load the macros from `source_module` in the namespace of
-    `target_module`.
+def require(source_module, target_module,
+            all_macros=False, assignments={}, prefix=""):
+    """Load macros from `source_module` in the namespace of
+    `target_module`. `assignments` maps old names to new names, but is
+    ignored if `all_macros` is true. If `prefix` is nonempty, it is
+    prepended to the name of each imported macro. (This means you get
+    macros named things like "mymacromodule.mymacro", which looks like
+    an attribute of a module, although it's actually just a symbol
+    with a period in its name.)
 
     This function is called from the `require` special form in the compiler.
 
     """
-    macros = _hy_macros[source_module]
-    refs = _hy_macros[target_module]
-    for name, macro in macros.items():
-        refs[name] = macro
 
-    readers = _hy_reader[source_module]
-    reader_refs = _hy_reader[target_module]
-    for name, reader in readers.items():
-        reader_refs[name] = reader
+    seen_names = set()
+    if prefix:
+        prefix += "."
+
+    for d in _hy_macros, _hy_tag:
+        for name, macro in d[source_module].items():
+            seen_names.add(name)
+            if all_macros:
+                d[target_module][prefix + name] = macro
+            elif name in assignments:
+                d[target_module][prefix + assignments[name]] = macro
+
+    if not all_macros:
+        unseen = frozenset(assignments.keys()).difference(seen_names)
+        if unseen:
+            raise ImportError("cannot require names: " + repr(list(unseen)))
 
 
 def load_macros(module_name):
@@ -126,12 +128,24 @@ def load_macros(module_name):
 
 
 def make_empty_fn_copy(fn):
-    argspec = getargspec(fn)
-    formatted_args = formatargspec(*argspec)
-    fn_str = 'lambda {}: None'.format(
-        formatted_args.lstrip('(').rstrip(')'))
+    try:
+        # This might fail if fn has parameters with funny names, like o!n. In
+        # such a case, we return a generic function that ensures the program
+        # can continue running. Unfortunately, the error message that might get
+        # raised later on while expanding a macro might not make sense at all.
 
-    empty_fn = eval(fn_str)
+        argspec = getargspec(fn)
+        formatted_args = formatargspec(*argspec)
+
+        fn_str = 'lambda {}: None'.format(
+            formatted_args.lstrip('(').rstrip(')'))
+        empty_fn = eval(fn_str)
+
+    except Exception:
+
+        def empty_fn(*args, **kwargs):
+            None
+
     return empty_fn
 
 
@@ -165,7 +179,7 @@ def macroexpand_1(tree, compiler):
 
         opts = {}
 
-        if isinstance(fn, HyString):
+        if isinstance(fn, HySymbol):
             m = _hy_macros[compiler.module_name].get(fn)
             if m is None:
                 m = _hy_macros[None].get(fn)
@@ -180,8 +194,9 @@ def macroexpand_1(tree, compiler):
                     msg = "expanding `" + str(tree[0]) + "': "
                     msg += str(e).replace("<lambda>()", "", 1).strip()
                     raise HyMacroExpansionError(tree, msg)
+
                 try:
-                    obj = wrap_value(m(*ntree[1:], **opts))
+                    obj = m(*ntree[1:], **opts)
                 except HyTypeError as e:
                     if e.expression is None:
                         e.expression = tree
@@ -195,19 +210,19 @@ def macroexpand_1(tree, compiler):
     return tree
 
 
-def reader_macroexpand(char, tree, compiler):
-    """Expand the reader macro "char" with argument `tree`."""
+def tag_macroexpand(tag, tree, compiler):
+    """Expand the tag macro "tag" with argument `tree`."""
     load_macros(compiler.module_name)
 
-    reader_macro = _hy_reader[compiler.module_name].get(char)
-    if reader_macro is None:
+    tag_macro = _hy_tag[compiler.module_name].get(tag)
+    if tag_macro is None:
         try:
-            reader_macro = _hy_reader[None][char]
+            tag_macro = _hy_tag[None][tag]
         except KeyError:
             raise HyTypeError(
-                char,
-                "`{0}' is not a defined reader macro.".format(char)
+                tag,
+                "`{0}' is not a defined tag macro.".format(tag)
             )
 
-    expr = reader_macro(tree)
-    return replace_hy_obj(wrap_value(expr), tree)
+    expr = tag_macro(tree)
+    return replace_hy_obj(expr, tree)

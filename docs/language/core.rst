@@ -26,8 +26,7 @@ Returns an iterator of all but the last item in *coll*.
    => (list (butlast []))
    []
 
-   => (import itertools)
-   => (list (take 5 (butlast (itertools.count 10))))
+   => (list (take 5 (butlast (count 10))))
    [10, 11, 12, 13, 14]
 
 
@@ -54,6 +53,51 @@ Returns ``True`` if *x* is iterable and not a string.
    False
 
 
+.. _comp:
+
+comp
+----
+
+Usage: ``(comp f g)``
+
+Compose zero or more functions into a new function. The new function will
+chain the given functions together, so ``((comp g f) x)`` is equivalent to
+``(g (f x))``. Called without arguments, ``comp`` returns ``identity``.
+
+.. code-block:: hy
+
+   => (def example (comp str +))
+   => (example 1 2 3)
+   "6"
+
+   => (def simple (comp))
+   => (simple "hello")
+   "hello"
+
+
+.. _complement:
+
+complement
+----------
+
+.. versionadded:: 0.12.0
+
+Usage: ``(complement f)``
+
+Returns a new function that returns the same thing as ``f``, but logically
+inverted. So, ``((complement f) x)`` is equivalent to ``(not (f x))``.
+
+.. code-block:: hy
+
+   => (def inverse (complement identity))
+   => (inverse True)
+   False
+   => (inverse 1)
+   False
+   => (inverse False)
+   True
+
+
 cons
 ----
 
@@ -67,10 +111,10 @@ Returns a fresh :ref:`cons cell <hycons>` with car *a* and cdr *b*.
 
    => (setv a (cons 'hd 'tl))
 
-   => (= 'hd (car a))
+   => (= 'hd (get a 0))
    True
 
-   => (= 'tl (cdr a))
+   => (= 'tl (cut a 1))
    True
 
 
@@ -90,11 +134,35 @@ Checks whether *foo* is a :ref:`cons cell <hycons>`.
    => (cons? a)
    True
 
-   => (cons? nil)
+   => (cons? None)
    False
 
    => (cons? [1 2 3])
    False
+
+
+.. _constantly:
+
+constantly
+----------
+
+.. versionadded:: 0.12.0
+
+Usage ``(constantly 42)``
+
+Create a new function that always returns the given value, regardless of
+the arguments given to it.
+
+.. code-block:: hy
+
+   => (def answer (constantly 42))
+   => (answer)
+   42
+   => (answer 1 2 3)
+   42
+   => (answer 1 :foo 2)
+   42
+
 
 .. _dec-fn:
 
@@ -137,7 +205,7 @@ is ``True``, the function prints Python code instead.
     body=[
         Expr(value=Call(func=Name(id='print'), args=[Str(s='Hello World!')], keywords=[], starargs=None, kwargs=None))])
 
-   => (disassemble '(print "Hello World!") true)
+   => (disassemble '(print "Hello World!") True)
    print('Hello World!')
 
 
@@ -160,6 +228,30 @@ Returns ``True`` if *coll* is empty. Equivalent to ``(= 0 (len coll))``.
 
    => (empty? (, 1 2))
    False
+
+
+.. _eval-fn:
+
+eval
+----
+
+``eval`` evaluates a quoted expression and returns the value. The optional
+second and third arguments specify the dictionary of globals to use and the
+module name. The globals dictionary defaults to ``(local)`` and the module name
+defaults to the name of the current module.
+
+.. code-block:: clj
+
+   => (eval '(print "Hello World"))
+   "Hello World"
+
+If you want to evaluate a string, use ``read-str`` to convert it to a
+form first:
+
+.. code-block:: clj
+
+   => (eval (read-str "(+ 1 1)"))
+   2
 
 
 .. _every?-fn:
@@ -215,14 +307,14 @@ fraction
 Returns a Python object of type ``fractions.Fraction``.
 
 .. code-block:: hy
-   
+
    => (fraction 1 2)
    Fraction(1, 2)
 
 Note that Hy has a built-in fraction literal that does the same thing:
 
 .. code-block:: hy
-   
+
    => 1/2
    Fraction(1, 2)
 
@@ -436,6 +528,31 @@ themselves as an iterator when ``(iter x)`` is called. Contrast with
    => (iterator? (iter {:a 1 :b 2 :c 3}))
    True
 
+
+.. _juxt-fn:
+
+juxt
+----
+
+.. versionadded:: 0.12.0
+
+Usage: ``(juxt f &rest fs)``
+
+Return a function that applies each of the supplied functions to a
+single set of arguments and collects the results into a list.
+
+.. code-block:: hy
+
+   => ((juxt min max sum) (range 1 101))
+   [1, 100, 5050]
+
+   => (dict (map (juxt identity ord) "abcdef"))
+   {'f': 102, 'd': 100, 'b': 98, 'e': 101, 'c': 99, 'a': 97}
+
+   => ((juxt + - * /) 24 3)
+   [27, 21, 72, 8.0]
+
+
 .. _keyword-fn:
 
 keyword
@@ -595,36 +712,6 @@ Returns ``True`` if *x* is less than zero. Raises ``TypeError`` if
    => (neg? 0)
    False
 
-
-.. _nil?-fn:
-
-nil?
-----
-
-Usage: ``(nil? x)``
-
-Returns ``True`` if *x* is ``nil`` / ``None``.
-
-.. code-block:: hy
-
-   => (nil? nil)
-   True
-
-   => (nil? None)
-   True
-
-   => (nil? 0)
-   False
-
-   => (setf x nil)
-   => (nil? x)
-   True
-
-   => ;; list.append always returns None
-   => (nil? (.append [1 2 3] 4))
-   True
-
-
 .. _none?-fn:
 
 none?
@@ -642,7 +729,7 @@ Returns ``True`` if *x* is ``None``.
    => (none? 0)
    False
 
-   => (setf x None)
+   => (setv x None)
    => (none? x)
    True
 
@@ -656,10 +743,10 @@ Returns ``True`` if *x* is ``None``.
 nth
 ---
 
-Usage: ``(nth coll n &optional [default nil])``
+Usage: ``(nth coll n &optional [default None])``
 
 Returns the *n*-th item in a collection, counting from 0. Return the
-default value, ``nil``, if out of bounds (unless specified otherwise).
+default value, ``None``, if out of bounds (unless specified otherwise).
 Raises ``ValueError`` if *n* is negative.
 
 .. code-block:: hy
@@ -670,7 +757,7 @@ Raises ``ValueError`` if *n* is negative.
    => (nth [1 2 4 7] 3)
    7
 
-   => (nil? (nth [1 2 4 7] 5))
+   => (none? (nth [1 2 4 7] 5))
    True
 
    => (nth [1 2 4 7] 5 "default")
@@ -807,23 +894,23 @@ some
 Usage: ``(some pred coll)``
 
 Returns the first logically-true value of ``(pred x)`` for any ``x`` in
-*coll*, otherwise ``nil``. Return ``nil`` if *coll* is empty.
+*coll*, otherwise ``None``. Return ``None`` if *coll* is empty.
 
 .. code-block:: hy
 
    => (some even? [2 4 6])
    True
 
-   => (nil? (some even? [1 3 5]))
+   => (none? (some even? [1 3 5]))
    True
 
-   => (nil? (some identity [0 "" []]))
+   => (none? (some identity [0 "" []]))
    True
 
    => (some identity [0 "non-empty-string" []])
    'non-empty-string'
 
-   => (nil? (some even? []))
+   => (none? (some even? []))
    True
 
 
@@ -898,12 +985,12 @@ as an example of how to use some of these functions.
    (defn fib []
      (setv a 0)
      (setv b 1)
-     (while true
+     (while True
        (yield a)
        (setv (, a b) (, b (+ a b)))))
 
 
-Note the ``(while true ...)`` loop. If we run this in the REPL,
+Note the ``(while True ...)`` loop. If we run this in the REPL,
 
 .. code-block:: hy
 
@@ -1024,8 +1111,7 @@ Returns an iterator of all but the last *n* items in *coll*. Raises
    => (list (drop-last 100 (range 100)))
    []
 
-   => (import itertools)
-   => (list (take 5 (drop-last 100 (itertools.count 10))))
+   => (list (take 5 (drop-last 100 (count 10))))
    [10, 11, 12, 13, 14]
 
 
@@ -1130,9 +1216,9 @@ if *from-file* ends before a complete expression can be parsed.
 
    => (import io)
    => (def buffer (io.StringIO "(+ 2 2)\n(- 2 1)"))
-   => (eval (apply read [] {"from_file" buffer}))
+   => (eval (read :from_file buffer))
    4
-   => (eval (apply read [] {"from_file" buffer}))
+   => (eval (read :from_file buffer))
    1
 
    => ; assuming "example.hy" contains:
@@ -1140,11 +1226,10 @@ if *from-file* ends before a complete expression can be parsed.
    => ;   (print "hyfriends!")
    => (with [f (open "example.hy")]
    ...   (try
-   ...     (while true
-   ...            (let [exp (read f)]
-   ...              (do
-   ...                (print "OHY" exp)
-   ...                (eval exp))))
+   ...     (while True
+   ...            (setv exp (read f))
+   ...            (print "OHY" exp)
+   ...            (eval exp))
    ...     (except [e EOFError]
    ...            (print "EOF!"))))
    OHY ('print' 'hello')
@@ -1291,3 +1376,23 @@ Returns an iterator from *coll* as long as *pred* returns ``True``.
    => (list (take-while neg? [ 1 2 3 -4 5]))
    []
 
+Included itertools
+==================
+
+count cycle repeat accumulate chain compress drop-while remove group-by islice *map take-while tee zip-longest product permutations combinations multicombinations
+---------
+
+All of Python's `itertools <https://docs.python.org/3/library/itertools.html>`_
+are available. Some of their names have been changed:
+
+  - ``starmap`` has been changed to ``*map``
+
+  - ``combinations_with_replacement`` has been changed to ``multicombinations``
+
+  - ``groupby`` has been changed to ``group-by``
+
+  - ``takewhile`` has been changed to ``take-while``
+  
+  - ``dropwhile`` has been changed to ``drop-while``
+  
+  - ``filterfalse`` has been changed to ``remove``

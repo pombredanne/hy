@@ -35,7 +35,7 @@ Command Line Options
 
 .. cmdoption:: --spy
 
-   Print equivalent Python code before executing. For example::
+   Print equivalent Python code before executing in REPL. For example::
 
     => (defn salutationsnm [name] (print (+ "Hy " name "!")))
     def salutationsnm(name):
@@ -45,6 +45,7 @@ Command Line Options
     Hy YourName!
     =>
 
+   `--spy` only works on REPL mode.
    .. versionadded:: 0.9.11
 
 .. cmdoption:: --show-tracebacks
@@ -52,6 +53,12 @@ Command Line Options
    Print extended tracebacks for Hy exceptions.
 
    .. versionadded:: 0.9.12
+
+.. cmdoption:: --repl-output-fn
+
+   Format REPL output using specific function (e.g., hy.contrib.hy-repr.hy-repr)
+
+   .. versionadded:: 0.13.0
 
 .. cmdoption:: -v
 

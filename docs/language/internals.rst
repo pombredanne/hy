@@ -44,7 +44,7 @@ Hy parser.
 HyList
 ~~~~~~
 
-``hy.models.list.HyList`` is the base class of "iterable" Hy models. Its
+``hy.models.HyList`` is the base class of "iterable" Hy models. Its
 basic use is to represent bracketed ``[]`` lists, which, when used as a
 top-level expression, translate to Python list literals in the
 compilation phase.
@@ -58,7 +58,7 @@ objects in a macro, for instance.
 HyExpression
 ~~~~~~~~~~~~
 
-``hy.models.expression.HyExpression`` inherits :ref:`HyList` for
+``hy.models.HyExpression`` inherits :ref:`HyList` for
 parenthesized ``()`` expressions. The compilation result of those
 expressions depends on the first element of the list: the compiler
 dispatches expressions between compiler special-forms, user-defined
@@ -69,7 +69,7 @@ macros, and regular Python function calls.
 HyDict
 ~~~~~~
 
-``hy.models.dict.HyDict`` inherits :ref:`HyList` for curly-bracketed ``{}``
+``hy.models.HyDict`` inherits :ref:`HyList` for curly-bracketed ``{}``
 expressions, which compile down to a Python dictionary literal.
 
 The decision of using a list instead of a dict as the base class for
@@ -101,7 +101,7 @@ the following order:
 HyString
 ~~~~~~~~
 
-``hy.models.string.HyString`` is the base class of string-equivalent Hy
+``hy.models.HyString`` is the base class of string-equivalent Hy
 models. It also represents double-quoted string literals, ``""``, which
 compile down to unicode string literals in Python. ``HyStrings`` inherit
 unicode objects in Python 2, and string objects in Python 3 (and are
@@ -113,17 +113,23 @@ Hy literal strings can span multiple lines, and are considered by the
 parser as a single unit, respecting the Python escapes for unicode
 strings.
 
+HyBytes
+~~~~~~~
+
+``hy.models.HyBytes`` is like ``HyString``, but for sequences of bytes.
+It inherits from ``bytes`` on Python 3 and ``str`` on Python 2.
+
 .. _hy_numeric_models:
 
 Numeric Models
 ~~~~~~~~~~~~~~
 
-``hy.models.integer.HyInteger`` represents integer literals (using the
+``hy.models.HyInteger`` represents integer literals (using the
 ``long`` type on Python 2, and ``int`` on Python 3).
 
-``hy.models.float.HyFloat`` represents floating-point literals.
+``hy.models.HyFloat`` represents floating-point literals.
 
-``hy.models.complex.HyComplex`` represents complex literals.
+``hy.models.HyComplex`` represents complex literals.
 
 Numeric models are parsed using the corresponding Python routine, and
 valid numeric python literals will be turned into their Hy counterpart.
@@ -133,7 +139,7 @@ valid numeric python literals will be turned into their Hy counterpart.
 HySymbol
 ~~~~~~~~
 
-``hy.models.symbol.HySymbol`` is the model used to represent symbols
+``hy.models.HySymbol`` is the model used to represent symbols
 in the Hy language. It inherits :ref:`HyString`.
 
 ``HySymbol`` objects are mangled in the parsing phase, to help Python
@@ -153,20 +159,15 @@ source code. Such a mechanism is used by :ref:`gensym` to generate
 HyKeyword
 ~~~~~~~~~
 
-``hy.models.keyword.HyKeyword`` represents keywords in Hy. Keywords are
-symbols starting with a ``:``. The class inherits :ref:`HyString`.
-
-To distinguish :ref:`HyKeywords <HyKeyword>` from :ref:`HySymbols
-<HySymbol>`, without the possibility of (involuntary) clashes, the
-private-use unicode character ``"\uFDD0"`` is prepended to the keyword
-literal before storage.
+``hy.models.HyKeyword`` represents keywords in Hy. Keywords are
+symbols starting with a ``:``. See :ref:`syntax-keywords`.
 
 .. _hycons:
 
 Cons Cells
 ==========
 
-``hy.models.cons.HyCons`` is a representation of Python-friendly `cons
+``hy.models.HyCons`` is a representation of Python-friendly `cons
 cells`_.  Cons cells are especially useful to mimic features of "usual"
 LISP variants such as Scheme or Common Lisp.
 
@@ -180,7 +181,7 @@ expressions are made of Python lists wrapped in a
 ``HyExpression``. However, the ``HyCons`` mimics the behavior of
 "usual" Lisp variants thusly:
 
- - ``(cons something nil)`` is ``(HyExpression [something])``
+ - ``(cons something None)`` is ``(HyExpression [something])``
  - ``(cons something some-list)`` is ``((type some-list) (+ [something]
    some-list))`` (if ``some-list`` inherits from ``list``).
  - ``(get (cons a b) 0)`` is ``a``
@@ -288,7 +289,7 @@ Second Stage Expression-Dispatch
 
 The only special case is the ``HyExpression``, since we need to create different
 AST depending on the special form in question. For instance, when we hit an
-``(if true true false)``, we need to generate a ``ast.If``, and properly
+``(if True True False)``, we need to generate a ``ast.If``, and properly
 compile the sub-nodes. This is where the ``@builds()`` with a String as an
 argument comes in.
 
@@ -321,7 +322,7 @@ In Python, doing something like:
 features, such as ``if``, ``for``, or ``while`` are statements.
 
 Since they have no "value" to Python, this makes working in Hy hard, since
-doing something like ``(print (if true true false))`` is not just common, it's
+doing something like ``(print (if True True False))`` is not just common, it's
 expected.
 
 As a result, we auto-mangle things using a ``Result`` object, where we offer
@@ -331,7 +332,7 @@ assignment to things while running.
 
 As example, the Hy::
 
-    (print (if true true false))
+    (print (if True True False))
 
 Will turn into::
 
@@ -381,7 +382,8 @@ A first pass might be something like:
 .. code-block:: hy
 
    (defmacro nif [expr pos-form zero-form neg-form]
-     `(let [obscure-name ~expr]
+     `(do
+       (setv obscure-name ~expr)
        (cond [(pos? obscure-name) ~pos-form]
              [(zero? obscure-name) ~zero-form]
              [(neg? obscure-name) ~neg-form])))
@@ -396,15 +398,16 @@ such an occasion. A much better version of ``nif`` would be:
 .. code-block:: hy
 
    (defmacro nif [expr pos-form zero-form neg-form]
-     (let [g (gensym)]
-       `(let [~g ~expr]
-          (cond [(pos? ~g) ~pos-form]
-                [(zero? ~g) ~zero-form]
-                [(neg? ~g) ~neg-form]))))
+     (setv g (gensym))
+     `(do
+        (setv ~g ~expr)
+        (cond [(pos? ~g) ~pos-form]
+              [(zero? ~g) ~zero-form]
+              [(neg? ~g) ~neg-form])))
 
 This is an easy case, since there is only one symbol. But if there is
 a need for several gensym's there is a second macro :ref:`with-gensyms` that
-basically expands to a series of ``let`` statements:
+basically expands to a ``setv`` form:
 
 .. code-block:: hy
 
@@ -415,9 +418,10 @@ expands to:
 
 .. code-block:: hy
 
-   (let [a (gensym)
-         b (gensym)
-         c (gensym)]
+   (do
+     (setv a (gensym)
+           b (gensym)
+           c (gensym))
      ...)
 
 so our re-written ``nif`` would look like:
@@ -426,10 +430,10 @@ so our re-written ``nif`` would look like:
 
    (defmacro nif [expr pos-form zero-form neg-form]
      (with-gensyms [g]
-       `(let [~g ~expr]
-          (cond [(pos? ~g) ~pos-form]
-                [(zero? ~g) ~zero-form]
-                [(neg? ~g) ~neg-form]))))
+       `(setv [~g ~expr])
+       `(cond [(pos? ~g) ~pos-form]
+              [(zero? ~g) ~zero-form]
+              [(neg? ~g) ~neg-form])))
 
 Finally, though we can make a new macro that does all this for us. :ref:`defmacro/g!`
 will take all symbols that begin with ``g!`` and automatically call ``gensym`` with the
@@ -440,10 +444,11 @@ Our final version of ``nif``, built with ``defmacro/g!`` becomes:
 .. code-block:: hy
 
    (defmacro/g! nif [expr pos-form zero-form neg-form]
-     `(let [~g!res ~expr]
+     `(do
+        (setv ~g!res ~expr)
         (cond [(pos? ~g!res) ~pos-form]
               [(zero? ~g!res) ~zero-form]
-              [(neg? ~g!res) ~neg-form]))))
+              [(neg? ~g!res) ~neg-form])))
 
 
 
@@ -455,5 +460,4 @@ Checking Macro Arguments and Raising Exceptions
 Hy Compiler Built-Ins
 =====================
 
-.. todo::
-    Write this.
+.. TODO: Write this.

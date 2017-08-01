@@ -101,15 +101,6 @@ Layout & Indentation
     )  ; GAH, BURN IT WITH FIRE
 
 
-+ Vertically align ``let`` blocks.
-
-  .. code-block:: clj
-
-     (let [foo (bar)
-           qux (baz)]
-        (foo qux))
-
-
 + Inline comments shall be two spaces from the end of the code; they
   must always have a space between the comment character and the start
   of the comment. Also, try to not comment the obvious.
@@ -138,13 +129,13 @@ Coding Style
      (def *limit* 400000)
 
      (defn fibs [a b]
-       (while true
+       (while True
          (yield a)
          (setv (, a b) (, b (+ a b)))))
 
      ;; Bad (and not preferred)
      (defn fibs [a b]
-       (while true
+       (while True
          (yield a)
          (def (, a b) (, b (+ a b)))))
 
@@ -221,6 +212,6 @@ Thanks
   Survival Guide`_
 + The `Clojure Style Guide`_
 
-.. _`Hy Survival Guide`: http://notes.pault.ag/hy-survival-guide/
+.. _`Hy Survival Guide`: https://notes.pault.ag/hy-survival-guide/
 .. _`Clojure Style Guide`: https://github.com/bbatsov/clojure-style-guide
 .. _`@paultag`: https://github.com/paultag

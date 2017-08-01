@@ -1,40 +1,16 @@
-# Copyright (c) 2013 Nicolas Dandrimont <nicolas.dandrimont@crans.org>
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Copyright 2017 the authors.
+# This file is part of Hy, which is free software licensed under the Expat
+# license. See the LICENSE.
 
-import sys
 from functools import wraps
+from ast import literal_eval
 
 from rply import ParserGenerator
 
-from hy.models.complex import HyComplex
-from hy.models.cons import HyCons
-from hy.models.dict import HyDict
-from hy.models.expression import HyExpression
-from hy.models.float import HyFloat
-from hy.models.integer import HyInteger
-from hy.models.keyword import HyKeyword
-from hy.models.list import HyList
-from hy.models.set import HySet
-from hy.models.string import HyString
-from hy.models.symbol import HySymbol
-
+from hy._compat import PY3, str_type
+from hy.models import (HyBytes, HyComplex, HyCons, HyDict, HyExpression,
+                       HyFloat, HyInteger, HyKeyword, HyList, HySet, HyString,
+                       HySymbol)
 from .lexer import lexer
 from .exceptions import LexException, PrematureEndOfInput
 
@@ -57,6 +33,28 @@ def hy_symbol_mangle(p):
 
     if p.endswith("!") and p != "!":
         p = "%s_bang" % (p[:-1])
+
+    return p
+
+
+def hy_symbol_unmangle(p):
+    # hy_symbol_mangle is one-way, so this can't be perfect.
+    # But it can be useful till we have a way to get the original
+    # symbol (https://github.com/hylang/hy/issues/360).
+    p = str_type(p)
+
+    if p.endswith("_bang") and p != "_bang":
+        p = p[:-len("_bang")] + "!"
+
+    if p.startswith("is_") and p != "is_":
+        p = p[len("is_"):] + "?"
+
+    if "_" in p and p != "_":
+        p = p.replace("_", "-")
+
+    if (all([c.isalpha() and c.isupper() or c == '_' for c in p]) and
+            any([c.isalpha() for c in p])):
+        p = '*' + p.lower() + '*'
 
     return p
 
@@ -92,23 +90,13 @@ def set_quote_boundaries(fun):
     return wrapped
 
 
-@pg.production("main : HASHBANG real_main")
-def main_hashbang(p):
-    return p[1]
-
-
-@pg.production("main : real_main")
+@pg.production("main : list_contents")
 def main(p):
     return p[0]
 
 
-@pg.production("real_main : list_contents")
-def real_main(p):
-    return p[0]
-
-
-@pg.production("real_main : $end")
-def real_main_empty(p):
+@pg.production("main : $end")
+def main_empty(p):
     return []
 
 
@@ -199,13 +187,30 @@ def term_unquote_splice(p):
     return HyExpression([HySymbol("unquote_splice"), p[1]])
 
 
-@pg.production("term : HASHREADER term")
+@pg.production("term : HASHSTARS term")
 @set_quote_boundaries
-def hash_reader(p):
-    st = p[0].getstr()[1]
+def term_hashstars(p):
+    n_stars = len(p[0].getstr()[1:])
+    if n_stars == 1:
+        sym = "unpack_iterable"
+    elif n_stars == 2:
+        sym = "unpack_mapping"
+    else:
+        raise LexException(
+            "Too many stars in `#*` construct (if you want to unpack a symbol "
+            "beginning with a star, separate it with whitespace)",
+            p[0].source_pos.lineno, p[0].source_pos.colno)
+    return HyExpression([HySymbol(sym), p[1]])
+
+
+@pg.production("term : HASHOTHER term")
+@set_quote_boundaries
+def hash_other(p):
+    # p == [(Token('HASHOTHER', '#foo'), bar)]
+    st = p[0].getstr()[1:]
     str_object = HyString(st)
     expr = p[1]
-    return HyExpression([HySymbol("dispatch_reader_macro"), str_object, expr])
+    return HyExpression([HySymbol("dispatch_tag_macro"), str_object, expr])
 
 
 @pg.production("set : HLCURLY list_contents RCURLY")
@@ -244,12 +249,19 @@ def t_empty_list(p):
     return HyList([])
 
 
-if sys.version_info[0] >= 3:
+if PY3:
     def uni_hystring(s):
-        return HyString(eval(s))
+        return HyString(literal_eval(s))
+
+    def hybytes(s):
+        return HyBytes(literal_eval('b'+s))
+
 else:
     def uni_hystring(s):
-        return HyString(eval('u'+s))
+        return HyString(literal_eval('u'+s))
+
+    def hybytes(s):
+        return HyBytes(literal_eval(s))
 
 
 @pg.production("string : STRING")
@@ -259,11 +271,16 @@ def t_string(p):
     s = p[0].value[:-1]
     # get the header
     header, s = s.split('"', 1)
-    # remove unicode marker
+    # remove unicode marker (this is redundant because Hy string
+    # literals already, by default, generate Unicode literals
+    # under Python 2)
     header = header.replace("u", "")
+    # remove bytes marker, since we'll need to exclude it for Python 2
+    is_bytestring = "b" in header
+    header = header.replace("b", "")
     # build python string
     s = header + '"""' + s + '"""'
-    return uni_hystring(s)
+    return (hybytes if is_bytestring else uni_hystring)(s)
 
 
 @pg.production("string : PARTIAL_STRING")
@@ -276,6 +293,24 @@ def t_partial_string(p):
 @set_boundaries
 def t_identifier(p):
     obj = p[0].value
+
+    val = symbol_like(obj)
+    if val is not None:
+        return val
+
+    if "." in obj and symbol_like(obj.split(".", 1)[0]) is not None:
+        # E.g., `5.attr` or `:foo.attr`
+        raise LexException(
+            'Cannot access attribute on anything other than a name (in '
+            'order to get attributes of expressions, use '
+            '`(. <expression> <attr>)` or `(.<attr> <expression>)`)',
+            p[0].source_pos.lineno, p[0].source_pos.colno)
+
+    return HySymbol(".".join(hy_symbol_mangle(x) for x in obj.split(".")))
+
+
+def symbol_like(obj):
+    "Try to interpret `obj` as a number or keyword."
 
     try:
         return HyInteger(obj)
@@ -301,21 +336,8 @@ def t_identifier(p):
         except ValueError:
             pass
 
-    table = {
-        "true": "True",
-        "false": "False",
-        "nil": "None",
-    }
-
-    if obj in table:
-        return HySymbol(table[obj])
-
-    if obj.startswith(":"):
+    if obj.startswith(":") and "." not in obj:
         return HyKeyword(obj)
-
-    obj = ".".join([hy_symbol_mangle(part) for part in obj.split(".")])
-
-    return HySymbol(obj)
 
 
 @pg.error

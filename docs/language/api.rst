@@ -18,7 +18,7 @@ These rules help ensure that Hy code is idiomatic and interfaceable in both
 languages.
 
 
-  * Symbols in earmufs will be translated to the upper-cased version of that
+  * Symbols in earmuffs will be translated to the upper-cased version of that
     string. For example, ``foo`` will become ``FOO``.
 
   * UTF-8 entities will be encoded using
@@ -34,10 +34,8 @@ languages.
 Notes on Syntax
 ===============
 
-integers
---------
-
-.. versionadded:: 0.11.1
+numeric literals
+----------------
 
 In addition to regular numbers, standard notation from Python 3 for non-base 10
 integers is used. ``0x`` for Hex, ``0o`` for Octal, ``0b`` for Binary.
@@ -46,6 +44,50 @@ integers is used. ``0x`` for Hex, ``0o`` for Octal, ``0b`` for Binary.
     
     (print 0x80 0b11101 0o102 30)
 
+Underscores and commas can appear anywhere in a numeric literal. They have no
+effect on the value of the literal, but they're useful for visually separating
+digits.
+
+.. code-block:: clj
+
+    (print 10,000,000,000 10_000_000_000)
+
+Unlike Python, Hy provides literal forms for NaN and infinity: `NaN`, `Inf`,
+and `-Inf`.
+
+string literals
+---------------
+
+Unlike Python, Hy allows only double-quoted strings (e.g., ``"hello"``). The
+single-quote character ``'`` is reserved for preventing the evaluation of a
+form (e.g., ``'(+ 1 1)``), as in most Lisps.
+
+Python's so-called triple-quoted strings (e.g., ``'''hello'''`` and
+``"""hello"""``) aren't supported. However, in Hy, unlike Python, any string
+literal can contain newlines.
+
+Whether running under Python 2 or Python 3, Hy treats string literals as
+sequences of Unicode characters by default, and allows you to prefix a literal
+with ``b`` to treat it as a sequence of bytes. So when running under Python 3,
+Hy translates ``"foo"`` and ``b"foo"`` to the identical Python code, but when
+running under Python 2, ``"foo"`` is translated to ``u"foo"`` and ``b"foo"`` is
+translated to ``"foo"``.
+
+.. _syntax-keywords:
+
+keywords
+--------
+
+An identifier headed by a colon, such as ``:foo``, is a keyword. Keywords
+evaluate to a string preceded by the Unicode non-character code point U+FDD0,
+like ``"\ufdd0:foo"``, so ``:foo`` and ``":foo"`` aren't equal. However, if a
+literal keyword appears in a function call, it's used to indicate a keyword
+argument rather than passed in as a value. For example, ``(f :foo 3)`` calls
+the function ``f`` with the keyword argument named ``foo`` set to ``3``. Hence,
+trying to call a function on a literal keyword may fail: ``(f :foo)`` yields
+the error ``Keyword argument :foo needs a value``. To avoid this, you can quote
+the keyword, as in ``(f ':foo)``, or use it as the value of another keyword
+argument, as in ``(f :arg :foo)``.
 
 Built-Ins
 =========
@@ -112,41 +154,6 @@ it appends it as the last argument. The following code demonstrates this:
     5 10
 
 
-apply
------
-
-``apply`` is used to apply an optional list of arguments and an
-optional dictionary of kwargs to a function. The symbol mangling
-transformations will be applied to all keys in the dictionary of
-kwargs, provided the dictionary and its keys are defined in-place.
-
-Usage: ``(apply fn-name [args] [kwargs])``
-
-Examples:
-
-.. code-block:: clj
-
-    (defn thunk []
-      "hy there")
-
-    (apply thunk)
-    ;=> "hy there"
-
-    (defn total-purchase [price amount &optional [fees 1.05] [vat 1.1]]
-      (* price amount fees vat))
-
-    (apply total-purchase [10 15])
-    ;=> 173.25
-
-    (apply total-purchase [10 15] {"vat" 1.05})
-    ;=> 165.375
-
-    (apply total-purchase [] {"price" 10 "amount" 15 "vat" 1.05})
-    ;=> 165.375
-
-    (apply total-purchase [] {:price 10 :amount 15 :vat 1.05})
-    ;=> 165.375
-
 and
 ---
 
@@ -177,6 +184,79 @@ other case, the first false value will be returned. Example usage:
 
     => (and False (print "hello"))
     False
+
+
+as->
+----
+
+.. versionadded:: 0.12.0
+
+Expands to sequence of assignments to the provided name, starting with head.
+The previous result is thus available in the subsequent form. Returns the final
+result, and leaves the name bound to it in the local scope. This behaves much
+like the other threading macros, but requires you to specify the threading
+point per form via the name instead of always the first or last argument.
+
+.. code-block:: clj
+
+  ;; example how -> and as-> relate
+
+  => (as-> 0 it
+  ...      (inc it)
+  ...      (inc it))
+  2
+
+  => (-> 0 inc inc)
+  2
+
+  ;; create data for our cuttlefish database
+
+  => (setv data [{:name "hooded cuttlefish"
+  ...             :classification {:subgenus "Acanthosepion"
+  ...                              :species "Sepia prashadi"}
+  ...             :discovered {:year 1936
+  ...                          :name "Ronald Winckworth"}}
+  ...            {:name "slender cuttlefish"
+  ...             :classification {:subgenus "Doratosepion"
+  ...                              :species "Sepia braggi"}
+  ...             :discovered {:year 1907
+  ...                          :name "Sir Joseph Cooke Verco"}}])
+
+  ;; retrieve name of first entry      
+  => (as-> (first data) it
+  ...      (:name it))
+  'hooded cuttlefish'
+
+  ;; retrieve species of first entry
+  => (as-> (first data) it
+  ...      (:classification it)
+  ...      (:species it))
+  'Sepia prashadi'
+
+  ;; find out who discovered slender cuttlefish
+  => (as-> (filter (fn [entry] (= (:name entry)
+  ...                           "slender cuttlefish")) data) it
+  ...      (first it)
+  ...      (:discovered it)
+  ...      (:name it))
+  'Sir Joseph Cooke Verco'
+
+  ;; more convoluted example to load web page and retrieve data from it
+  => (import [urllib.request [urlopen]])
+  => (as-> (urlopen "http://docs.hylang.org/en/stable/") it
+  ...      (.read it)
+  ...      (.decode it "utf-8")
+  ...      (drop (.index it "Welcome") it)
+  ...      (take 30 it)
+  ...      (list it)
+  ...      (.join "" it))
+  'Welcome to Hy’s documentation!
+
+.. note::
+
+  In these examples, the REPL will report a tuple (e.g. `('Sepia prashadi', 
+  'Sepia prashadi')`) as the result, but only a single value is actually
+  returned.
 
 
 assert
@@ -213,17 +293,20 @@ Examples of usage:
 
 .. code-block:: clj
 
-  =>(let [collection {}]
+  =>(do
+  ... (setv collection {})
   ... (assoc collection "Dog" "Bark")
   ... (print collection))
   {u'Dog': u'Bark'}
 
-  =>(let [collection {}]
+  =>(do
+  ... (setv collection {})
   ... (assoc collection "Dog" "Bark" "Cat" "Meow")
   ... (print collection))
   {u'Cat': u'Meow', u'Dog': u'Bark'}
 
-  =>(let [collection [1 2 3 4]]
+  =>(do
+  ... (setv collection [1 2 3 4])
   ... (assoc collection 2 None)
   ... (print collection))
   [1, 2, None, 4]
@@ -258,6 +341,18 @@ shows the relationship between the macro and its expansion:
 
     (if condition-1 result-1
       (if condition-2 result-2))
+
+If only the condition is given in a branch, then the condition is also used as
+the result. The expansion of this single argument version is demonstrated
+below:
+
+.. code-block:: clj
+
+    (cond [condition-1]
+          [condition-2])
+
+    (if condition-1 condition-1
+      (if condition-2 condition-2))
 
 As shown below, only the first matching result block is executed.
 
@@ -312,14 +407,14 @@ do
 
 ``do`` is used to evaluate each of its arguments and return the
 last one. Return values from every other than the last argument are discarded.
-It can be used in ``lambda`` or ``list-comp`` to perform more complex logic as
-shown in one of the following examples.
+It can be used in ``list-comp`` to perform more complex logic as shown in one
+of the following examples.
 
 Some example usage:
 
 .. code-block:: clj
 
-    => (if true
+    => (if True
     ...  (do (print "Side effects rock!")
     ...      (print "Yeah, really!")))
     Side effects rock!
@@ -466,8 +561,8 @@ Parameters may have the following keywords in front of them:
         parameter_1 1
         parameter_2 2
 
-        ; to avoid the mangling of '-' to '_', use apply:
-        => (apply print-parameters [] {"parameter-1" 1 "parameter-2" 2})
+        ; to avoid the mangling of '-' to '_', use unpacking:
+        => (print-parameters #** {"parameter-1" 1 "parameter-2" 2})
         parameter-1 1
         parameter-2 2
 
@@ -482,9 +577,9 @@ Parameters may have the following keywords in front of them:
     .. code-block:: clj
 
         => (defn zig-zag-sum [&rest numbers]
-             (let [odd-numbers (list-comp x [x numbers] (odd? x))
-	           even-numbers (list-comp x [x numbers] (even? x))]
-               (- (sum odd-numbers) (sum even-numbers))))
+             (setv odd-numbers (list-comp x [x numbers] (odd? x))
+	           even-numbers (list-comp x [x numbers] (even? x)))
+             (- (sum odd-numbers) (sum even-numbers)))
 
         => (zig-zag-sum)
         0
@@ -504,19 +599,19 @@ Parameters may have the following keywords in front of them:
 
     .. code-block:: clj
 
-        => (defn compare [a b &kwonly keyfn [reverse false]]
-        ...  (let [result (keyfn a b)]
-        ...    (if (not reverse)
-        ...      result
-        ...      (- result))))
-        => (apply compare ["lisp" "python"]
-        ...        {"keyfn" (fn [x y]
-        ...                   (reduce - (map (fn [s] (ord (first s))) [x y])))})
+        => (defn compare [a b &kwonly keyfn [reverse False]]
+        ...  (setv result (keyfn a b))
+        ...  (if (not reverse)
+        ...    result
+        ...    (- result)))
+        => (compare "lisp" "python"
+        ...         :keyfn (fn [x y]
+        ...                  (reduce - (map (fn [s] (ord (first s))) [x y]))))
         -4
-        => (apply compare ["lisp" "python"]
-        ...        {"keyfn" (fn [x y]
+        => (compare "lisp" "python"
+        ...         :keyfn (fn [x y]
         ...                   (reduce - (map (fn [s] (ord (first s))) [x y])))
-        ...         "reverse" true})
+        ...         :reverse True)
         4
 
     .. code-block:: python
@@ -551,7 +646,7 @@ is the equivalent of::
 
    if __name__ == "__main__":
        import sys
-       retval = main(*sys.arg)
+       retval = main(*sys.argv)
 
        if isinstance(retval, int):
            sys.exit(retval)
@@ -559,12 +654,28 @@ is the equivalent of::
 Note that as you can see above, if you return an integer from this
 function, this will be used as the exit status for your script.
 (Python defaults to exit status 0 otherwise, which means everything's
-okay!)
+okay!) Since ``(sys.exit 0)`` is not run explicitly in the case of a
+non-integer return from ``defmain``, it's a good idea to put ``(defmain)``
+as the last piece of code in your file.
 
-(Since ``(sys.exit 0)`` is not run explicitly in the case of a non-integer
-return from ``defmain``, it's a good idea to put ``(defmain)`` as the last
-piece of code in your file.)
+If you want fancy command-line arguments, you can use the standard Python
+module ``argparse`` in the usual way:
 
+.. code-block:: clj
+
+    (import argparse)
+
+    (defmain [&rest _]
+      (setv parser (argparse.ArgumentParser))
+      (.add-argument parser "STRING"
+        :help "string to replicate")
+      (.add-argument parser "-n" :type int :default 3
+        :help "number of copies")
+      (setv args (parser.parse_args))
+
+      (print (* args.STRING args.n))
+
+      0)
 
 .. _defmacro:
 
@@ -607,25 +718,64 @@ For example, ``g!a`` would become ``(gensym "a")``.
 
    Section :ref:`using-gensym`
 
-defreader
+.. _defmacro!:
+
+defmacro!
 ---------
 
-.. versionadded:: 0.9.12
+``defmacro!`` is like ``defmacro/g!`` plus automatic once-only evaluation for
+``o!`` parameters, which are available as the equivalent ``g!`` symbol.
 
-``defreader`` defines a reader macro, enabling you to restructure or
-modify syntax.
+For example,
 
 .. code-block:: clj
 
-    => (defreader ^ [expr] (print expr))
-    => #^(1 2 3 4)
-    (1 2 3 4)
-    => #^"Hello"
-    "Hello"
+    => (defn expensive-get-number [] (print "spam") 14)
+    => (defmacro triple-1 [n] `(+ ~n ~n ~n))
+    => (triple-1 (expensive-get-number))  ; evals n three times
+    spam
+    spam
+    spam
+    42
+    => (defmacro/g! triple-2 [n] `(do (setv ~g!n ~n) (+ ~g!n ~g!n ~g!n)))
+    => (triple-2 (expensive-get-number))  ; avoid repeats with a gensym
+    spam
+    42
+    => (defmacro! triple-3 [o!n] `(+ ~g!n ~g!n ~g!n))
+    => (triple-3 (expensive-get-number))  ; easier with defmacro!
+    spam
+    42
 
-.. seealso::
 
-    Section :ref:`Reader Macros <reader-macros>`
+deftag
+--------
+
+.. versionadded:: 0.13.0
+
+``deftag`` defines a tag macro. A tag macro is a unary macro that has the
+same semantics as an ordinary macro defined with ``defmacro``. It is called with
+the syntax ``#tag FORM``, where ``tag`` is the name of the macro, and ``FORM``
+is any form. The ``tag`` is often only one character, but it can be any symbol.
+
+.. code-block:: clj
+
+    => (deftag ♣ [expr] `[~expr ~expr])
+    <function <lambda> at 0x7f76d0271158>
+    => #♣ 5
+    [5, 5]
+    => (setv x 0)
+    => #♣(+= x 1)
+    [None, None]
+    => x
+    2
+
+In this example, if you used ``(defmacro ♣ ...)`` instead of ``(deftag
+♣ ...)``, you would call the macro as ``(♣ 5)`` or ``(♣ (+= x 1))``.
+
+The syntax for calling tag macros is similar to that of reader macros a la
+Common Lisp's ``SET-MACRO-CHARACTER``. In fact, before Hy 0.13.0, tag macros
+were called "reader macros", and defined with ``defreader`` rather than
+``deftag``. True reader macros are not (yet) implemented in Hy.
 
 del
 ---
@@ -681,18 +831,6 @@ doto
   => collection
   [2 1]
 
-eval
-----
-
-``eval`` evaluates a quoted expression and returns the value. The optional
-second and third arguments specify the dictionary of globals to use and the
-module name. The globals dictionary defaults to ``(local)`` and the module name
-defaults to the name of the current module.
-
-.. code-block:: clj
-
-   => (eval '(print "Hello World"))
-   "Hello World"
 
 eval-and-compile
 ----------------
@@ -702,16 +840,26 @@ eval-when-compile
 -----------------
 
 
-first / car
------------
+first
+-----
 
-``first`` and ``car`` are macros for accessing the first element of a collection:
+``first`` is a function for accessing the first element of a collection.
 
 .. code-block:: clj
 
     => (first (range 10))
     0
 
+It is implemented as ``(next (iter coll) None)``, so it works with any
+iterable, and if given an empty iterable, it will return ``None`` instead of
+raising an exception.
+
+.. code-block:: clj
+
+    => (first (repeat 10))
+    10
+    => (first [])
+    None
 
 for
 ---
@@ -798,19 +946,25 @@ written without accidental variable name clashes.
 get
 ---
 
-``get`` is used to access single elements in lists and dictionaries. ``get``
-takes two parameters: the *data structure* and the *index* or *key* of the
-item. It will then return the corresponding value from the dictionary or the
-list. Example usage:
+``get`` is used to access single elements in collections. ``get`` takes at
+least two parameters: the *data structure* and the *index* or *key* of the
+item. It will then return the corresponding value from the collection. If
+multiple *index* or *key* values are provided, they are used to access
+successive elements in a nested structure. Example usage:
 
 .. code-block:: clj
 
-   => (let [animals {"dog" "bark" "cat" "meow"}
-   ...      numbers ["zero" "one" "two" "three"]]
+   => (do
+   ...  (setv animals {"dog" "bark" "cat" "meow"}
+   ...        numbers (, "zero" "one" "two" "three")
+   ...        nested [0 1 ["a" "b" "c"] 3 4])
    ...  (print (get animals "dog"))
-   ...  (print (get numbers 2)))
+   ...  (print (get numbers 2))
+   ...  (print (get nested 2 1)))
+
    bark
    two
+   b
 
 .. note:: ``get`` raises a KeyError if a dictionary is queried for a
           non-existing key.
@@ -849,8 +1003,8 @@ if / if* / if-not
    if-not
 
 ``if / if* / if-not`` respect Python *truthiness*, that is, a *test* fails if it
-evaluates to a "zero" (including values of ``len`` zero, ``nil``, and
-``false``), and passes otherwise, but values with a ``__bool__`` method
+evaluates to a "zero" (including values of ``len`` zero, ``None``, and
+``False``), and passes otherwise, but values with a ``__bool__`` method
 (``__nonzero__`` in Python 2) can overrides this.
 
 The ``if`` macro is for conditionally selecting an expression for evaluation.
@@ -858,7 +1012,7 @@ The result of the selected expression becomes the result of the entire ``if``
 form. ``if`` can select a group of expressions with the help of a ``do`` block.
 
 ``if`` takes any number of alternating *test* and *then* expressions, plus an
-optional *else* expression at the end, which defaults to ``nil``. ``if`` checks
+optional *else* expression at the end, which defaults to ``None``. ``if`` checks
 each *test* in turn, and selects the *then* corresponding to the first passed
 test. ``if`` does not evaluate any expressions following its selection, similar
 to the ``if/elif/else`` control structure from Python. If no tests pass, ``if``
@@ -871,7 +1025,7 @@ generally no reason to use it directly.
 ``if-not`` is similar to ``if*`` but the second expression will be executed
 when the condition fails while the third and final expression is executed when
 the test succeeds -- the opposite order of ``if*``. The final expression is
-again optional and defaults to ``nil``.
+again optional and defaults to ``None``.
 
 Example usage:
 
@@ -901,7 +1055,7 @@ lif and lif-not
    lif-not
 
 For those that prefer a more Lispy ``if`` clause, we have
-``lif``. This *only* considers ``None`` / ``nil`` to be false! All other
+``lif``. This *only* considers ``None`` to be false! All other
 "false-ish" Python values are considered true. Conversely, we have
 ``lif-not`` in parallel to ``if`` and ``if-not`` which
 reverses the comparison.
@@ -915,17 +1069,14 @@ reverses the comparison.
     "true"
     => (lif 0 "true" "false")
     "true"
-    => (lif nil "true" "false")
-    "false"
     => (lif None "true" "false")
     "false"
-    => (lif-not nil "true" "false")
-    "true"
     => (lif-not None "true" "false")
     "true"
     => (lif-not False "true" "false")
     "false"
 
+.. _import:
 
 import
 ------
@@ -953,21 +1104,32 @@ that ``import`` can be used.
     (import [sys :as systest])
 
     ;; You can list as many imports as you like of different types.
+    ;;
+    ;; Python:
+    ;; from tests.resources import kwtest, function_with_a_dash
+    ;; from os.path import exists, isdir as is_dir, isfile as is_file
+    ;; import sys as systest
     (import [tests.resources [kwtest function-with-a-dash]]
-            [os.path [exists isdir isfile]]
+            [os.path [exists
+	              isdir :as dir?
+		      isfile :as file?]]
             [sys :as systest])
 
     ;; Import all module functions into current namespace
+    ;;
+    ;; Python: from sys import *
     (import [sys [*]])
 
 
-lambda / fn
+fn
 -----------
 
-``lambda`` and ``fn`` can be used to define an anonymous function. The parameters are
-similar to ``defn``: the first parameter is vector of parameters and the rest is the
-body of the function. ``lambda`` returns a new function. In the following example, an
-anonymous function is defined and passed to another function for filtering output.
+``fn``, like Python's ``lambda``, can be used to define an anonymous function.
+Unlike Python's ``lambda``, the body of the function can comprise several
+statements. The parameters are similar to ``defn``: the first parameter is
+vector of parameters and the rest is the body of the function. ``fn`` returns a
+new function. In the following example, an anonymous function is defined and
+passed to another function for filtering output.
 
 .. code-block:: clj
 
@@ -1016,36 +1178,6 @@ last
     6
 
 
-let
----
-
-``let`` is used to create lexically scoped variables. They are created at the
-beginning of the ``let`` form and cease to exist after the form. The following
-example showcases this behaviour:
-
-.. code-block:: clj
-
-    => (let [x 5] (print x)
-    ...  (let [x 6] (print x))
-    ...  (print x))
-    5
-    6
-    5
-
-The ``let`` macro takes two parameters: a vector defining *variables*
-and the *body* which gets executed. *variables* is a vector of
-variable and value pairs.
-
-Note that the variable assignments are executed one by one, from left to right.
-The following example takes advantage of this:
-
-.. code-block:: clj
-
-    => (let [x 5 
-             y (+ x 1)] (print x y))
-    5 6
-
-
 list-comp
 ---------
 
@@ -1077,30 +1209,20 @@ nonlocal
 
 ``nonlocal`` can be used to mark a symbol as not local to the current scope.
 The parameters are the names of symbols to mark as nonlocal.  This is necessary
-to modify variables through nested ``let`` or ``fn`` scopes:
+to modify variables through nested ``fn`` scopes:
 
 .. code-block:: clj
 
-    (let [x 0]
-      (for [y (range 10)]
-        (let [z (inc y)]
-          (nonlocal x)  ; allow the setv to "jump scope" to resolve x
-          (setv x (+ x y))))
-      x)
-
     (defn some-function []
-      (let [x 0]
-        (register-some-callback
-          (fn [stuff]
-            (nonlocal x)
-            (setv x stuff)))))
+      (setv x 0)
+      (register-some-callback
+        (fn [stuff]
+          (nonlocal x)
+          (setv x stuff))))
 
-In the first example, without the call to ``(nonlocal x)``, this code would
-result in an UnboundLocalError being raised during the call to ``setv``.
-
-In the second example, without the call to ``(nonlocal x)``, the inner function
-would redefine ``x`` to ``stuff`` inside its local scope instead of overwriting
-the ``x`` in the outer function
+Without the call to ``(nonlocal x)``, the inner function would redefine ``x`` to
+``stuff`` inside its local scope instead of overwriting the ``x`` in the outer
+function.
 
 See `PEP3104 <https://www.python.org/dev/peps/pep-3104/>`_ for further
 information.
@@ -1201,28 +1323,102 @@ alternatively be written using the apostrophe (``'``) symbol.
 require
 -------
 
-``require`` is used to import macros from a given module. It takes at least one
-parameter specifying the module which macros should be imported. Multiple
-modules can be imported with a single ``require``.
+``require`` is used to import macros from one or more given modules. It allows
+parameters in all the same formats as ``import``. The ``require`` form itself
+produces no code in the final program: its effect is purely at compile-time, for
+the benefit of macro expansion. Specifically, ``require`` imports each named
+module and then makes each requested macro available in the current module.
 
-The following example will import macros from ``module-1`` and ``module-2``:
-
-.. code-block:: clj
-
-    (require module-1 module-2)
-
-
-rest / cdr
-----------
-
-``rest`` and ``cdr`` return the collection passed as an argument without the
-first element:
+The following are all equivalent ways to call a macro named ``foo`` in the module ``mymodule``:
 
 .. code-block:: clj
 
-    => (rest (range 10))
+    (require mymodule)
+    (mymodule.foo 1)
+
+    (require [mymodule :as M])
+    (M.foo 1)
+
+    (require [mymodule [foo]])
+    (foo 1)
+
+    (require [mymodule [*]])
+    (foo 1)
+
+    (require [mymodule [foo :as bar]])
+    (bar 1)
+
+Macros that call macros
+~~~~~~~~~~~~~~~~~~~~~~~
+
+One aspect of ``require`` that may be surprising is what happens when one
+macro's expansion calls another macro. Suppose ``mymodule.hy`` looks like this:
+
+.. code-block:: clj
+
+    (defmacro repexpr [n expr]
+      ; Evaluate the expression n times
+      ; and collect the results in a list.
+      `(list (map (fn [_] ~expr) (range ~n))))
+
+    (defmacro foo [n]
+      `(repexpr ~n (input "Gimme some input: ")))
+
+And then, in your main program, you write:
+
+.. code-block:: clj
+
+    (require [mymodule [foo]])
+
+    (print (mymodule.foo 3))
+
+Running this raises ``NameError: name 'repexpr' is not defined``, even though
+writing ``(print (foo 3))`` in ``mymodule`` works fine. The trouble is that your
+main program doesn't have the macro ``repexpr`` available, since it wasn't
+imported (and imported under exactly that name, as opposed to a qualified name).
+You could do ``(require [mymodule [*]])`` or ``(require [mymodule [foo
+repexpr]])``, but a less error-prone approach is to change the definition of
+``foo`` to require whatever sub-macros it needs:
+
+.. code-block:: clj
+
+    (defmacro foo [n]
+      `(do
+        (require mymodule)
+        (mymodule.repexpr ~n (raw-input "Gimme some input: "))))
+
+It's wise to use ``(require mymodule)`` here rather than ``(require [mymodule
+[repexpr]])`` to avoid accidentally shadowing a function named ``repexpr`` in
+the main program.
+
+Qualified macro names
+~~~~~~~~~~~~~~~~~~~~~
+
+Note that in the current implementation, there's a trick in qualified macro
+names, like ``mymodule.foo`` and ``M.foo`` in the above example. These names
+aren't actually attributes of module objects; they're just identifiers with
+periods in them. In fact, ``mymodule`` and ``M`` aren't defined by these
+``require`` forms, even at compile-time. None of this will hurt you unless try
+to do introspection of the current module's set of defined macros, which isn't
+really supported anyway.
+
+rest
+----
+
+``rest`` takes the given collection and returns an iterable of all but the
+first element.
+
+.. code-block:: clj
+
+    => (list (rest (range 10)))
     [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
+Given an empty collection, it returns an empty iterable.
+
+.. code-block:: clj
+
+    => (list (rest []))
+    []
 
 set-comp
 --------
@@ -1297,23 +1493,37 @@ or no arguments to re-raise the last ``Exception``.
 try
 ---
 
-The ``try`` form is used to start a ``try`` / ``except`` block. The form is
-used as follows:
+The ``try`` form is used to catch exceptions (``except``) and run cleanup
+actions (``finally``).
 
 .. code-block:: clj
 
     (try
-        (error-prone-function)
-        (except [e ZeroDivisionError] (print "Division by zero"))
-        (else (print "no errors"))
-        (finally (print "all done")))
+      (error-prone-function)
+      (except [ZeroDivisionError]
+        (print "Division by zero"))
+      (except [[IndexError KeyboardInterrupt]]
+        (print "Index error or Ctrl-C"))
+      (except [e ValueError]
+        (print "ValueError:" (repr e)))
+      (except [e [TabError PermissionError ReferenceError]]
+        (print "Some sort of error:" (repr e)))
+      (else
+        (print "No errors"))
+      (finally
+        (print "All done")))
 
-``try`` must contain at least one ``except`` block, and may optionally include
-an ``else`` or ``finally`` block. If an error is raised with a matching except
-block during the execution of ``error-prone-function``, that ``except`` block
-will be executed. If no errors are raised, the ``else`` block is executed. The
-``finally`` block will be executed last regardless of whether or not an error
-was raised.
+The first argument of ``try`` is its body. (To put more than one form in the
+body, use ``do``.) Then comes any number of ``except`` clauses, then optionally
+an ``else`` clause, then optionally a ``finally`` clause. If an exception is
+raised with a matching ``except`` clause during the execution of the body, that
+``except`` clause will be executed. If no exceptions are raised, the ``else``
+clause is executed. The ``finally`` clause will be executed last regardless of
+whether an exception was raised.
+
+The return value of ``try`` is the last form of the ``except`` clause that was
+run, or the last form of ``else`` if no exception was raised, or the ``try``
+body if there is no ``else`` clause.
 
 
 unless
@@ -1329,6 +1539,49 @@ the given conditional is ``False``. The following shows the expansion of this ma
     (if conditional
       None
       (do statement))
+
+
+unpack-iterable, unpack-mapping
+-------------------------------
+
+``unpack-iterable`` and ``unpack-mapping`` allow an iterable or mapping
+object (respectively) to provide positional or keywords arguments
+(respectively) to a function.
+
+.. code-block:: clj
+
+    => (defn f [a b c d] [a b c d])
+    => (f (unpack-iterable [1 2]) (unpack-mapping {"c" 3 "d" 4}))
+    [1, 2, 3, 4]
+
+``unpack-iterable`` is usually written with the shorthand ``#*``, and
+``unpack-mapping`` with ``#**``.
+
+.. code-block:: clj
+
+    => (f #* [1 2] #** {"c" 3 "d" 4})
+    [1, 2, 3, 4]
+
+With Python 3, you can unpack in an assignment list (:pep:`3132`).
+
+.. code-block:: clj
+
+    => (setv [a #* b c] [1 2 3 4 5])
+    => [a b c]
+    [1, [2, 3, 4], 5]
+
+With Python 3.5 or greater, unpacking is allowed in more contexts than just
+function calls, and you can unpack more than once in the same expression
+(:pep:`448`).
+
+.. code-block:: clj
+
+    => [#* [1 2] #* [3 4]]
+    [1, 2, 3, 4]
+    => {#** {1 2} #** {3 4}}
+    {1: 2, 3: 4}
+    => (f #* [1] #* [2] #** {"c" 3} #** {"d" 4})
+    [1, 2, 3, 4]
 
 
 unquote
@@ -1459,14 +1712,13 @@ will be 4 (``1+1 + 1+1``).
     => (addition 1 1)
     8
 
-
 #@
 ~~
 
 .. versionadded:: 0.12.0
 
-The :ref:`reader macro<reader-macros>` ``#@`` can be used as a shorthand
-for ``with-decorator``. With ``#@``, the previous example becomes:
+The tag macro ``#@`` can be used as a shorthand for ``with-decorator``. With
+``#@``, the previous example becomes:
 
 .. code-block:: clj
 
@@ -1498,9 +1750,10 @@ expands to:
 
 .. code-block:: hy
 
-   (let [a (gensym)
-         b (gensym)
-         c (gensym)]
+   (do
+     (setv a (gensym)
+           b (gensym)
+           c (gensym))
      ...)
 
 .. seealso::
@@ -1513,20 +1766,15 @@ xor
 
 .. versionadded:: 0.12.0
 
-``xor`` is used in logical expressions to perform exclusive or. It takes two
-parameters. It returns ``True`` if only of the parameters is ``True``. In all
-other cases ``False`` is returned. Example usage:
+``xor`` performs the logical operation of exclusive OR. It takes two arguments.
+If exactly one argument is true, that argument is returned. If neither is true,
+the second argument is returned (which will necessarily be false). Otherwise,
+when both arguments are true, the value ``False`` is returned.
 
 .. code-block:: clj
 
-    => (xor True False)
-    True
-
-    => (xor True True)
-    False
-
-    => (xor [] [0])
-    True
+    => [(xor 0 0) (xor 0 1) (xor 1 0) (xor 1 1)]
+    [0, 1, 1, False]
 
 
 yield
@@ -1568,4 +1816,4 @@ yield-from
 ``yield-from`` is used to call a subgenerator.  This is useful if you
 want your coroutine to be able to delegate its processes to another
 coroutine, say, if using something fancy like
-`asyncio <http://docs.python.org/3.4/library/asyncio.html>`_.
+`asyncio <https://docs.python.org/3.4/library/asyncio.html>`_.

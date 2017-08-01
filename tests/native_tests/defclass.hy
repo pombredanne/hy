@@ -1,3 +1,7 @@
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
+
 (defn test-defclass []
   "NATIVE: test defclass simple mechanism"
   (defclass A)
@@ -36,17 +40,17 @@
          (+ self.x value))])
   (assert (= B.x 42))
   (assert (= (.y (B) 5) 47))
-  (let [b (B)]
-    (setv B.x 0)
-    (assert (= (.y b 1) 1))))
+  (setv b (B))
+  (setv B.x 0)
+  (assert (= (.y b 1) 1)))
 
 
 (defn test-defclass-dynamic-inheritance []
   "NATIVE: test defclass with dynamic inheritance"
-  (defclass A [((fn [] (if true list dict)))]
+  (defclass A [((fn [] (if True list dict)))]
     [x 42])
   (assert (isinstance (A) list))
-  (defclass A [((fn [] (if false list dict)))]
+  (defclass A [((fn [] (if False list dict)))]
     [x 42])
   (assert (isinstance (A) dict)))
 
@@ -58,7 +62,7 @@
   (try
    (do
     (x)
-    (assert false))
+    (assert False))
    (except [NameError])))
 
 (defn test-defclass-docstring []
@@ -110,8 +114,8 @@
   (assert foo 2)
   (assert (.greet a) "hello"))
 
-(defn test-defclass-implicit-nil-for-init []
-  "NATIVE: test that defclass adds an implicit nil to --init--"
+(defn test-defclass-implicit-none-for-init []
+  "NATIVE: test that defclass adds an implicit None to --init--"
   (defclass A []
     [--init-- (fn [self] (setv self.x 1) 42)])
   (defclass B []

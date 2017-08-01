@@ -1,23 +1,8 @@
-;; Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-;; Copyright (c) 2013, 2014 Bob Tolbert <bob@tolbert.org>
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
 
-;; Permission is hereby granted, free of charge, to any person obtaining a
-;; copy of this software and associated documentation files (the "Software"),
-;; to deal in the Software without restriction, including without limitation
-;; the rights to use, copy, modify, merge, publish, distribute, sublicense,
-;; and/or sell copies of the Software, and to permit persons to whom the
-;; Software is furnished to do so, subject to the following conditions:
-
-;; The above copyright notice and this permission notice shall be included in
-;; all copies or substantial portions of the Software.
-
-;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-;; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-;; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-;; THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-;; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-;; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-;; DEALINGS IN THE SOFTWARE.
+(import [hy._compat [PY3]])
 
 ;;;; some simple helpers
 
@@ -30,8 +15,14 @@
 (defn assert-equal [x y]
   (assert (= x y)))
 
-(defn assert-nil [x]
-  (assert (is x nil)))
+(defn assert-none [x]
+  (assert (is x None)))
+
+(defn assert-requires-num [f]
+  (for [x ["foo" [] None]]
+    (try (f x)
+         (except [TypeError] True)
+         (else (assert False)))))
 
 (defn test-coll? []
   "NATIVE: testing coll?"
@@ -66,22 +57,19 @@
   (assert-equal 0 (dec 1))
   (assert-equal -1 (dec 0))
   (assert-equal 0 (dec (dec 2)))
-  (try (do (dec "foo") (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (dec []) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (dec None) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e))))))
+  (assert-requires-num dec))
 
 (defn test-setv []
   "NATIVE: testing setv mutation"
   (setv x 1)
   (setv y 1)
   (assert-equal x y)
-  (setv x (setv y  12))
+  (setv y 12)
+  (setv x y)
   (assert-equal x 12)
   (assert-equal y 12)
-  (setv x (setv y (fn [x] 9)))
+  (setv y (fn [x] 9))
+  (setv x y)
   (assert-equal (x y) 9)
   (assert-equal (y x) 9)
   (try (do (setv a.b 1) (assert False))
@@ -127,7 +115,7 @@
   (setv res (list (drop 0 [1 2 3 4 5])))
   (assert-equal res [1 2 3 4 5])
   (try (do (list (drop -1 [1 2 3 4 5])) (assert False))
-       (except [e [ValueError]] nil))
+       (except [e [ValueError]] None))
   (setv res (list (drop 6 (iter [1 2 3 4 5]))))
   (assert-equal res [])
   (setv res (list (take 5 (drop 2 (iterate inc 0)))))
@@ -173,12 +161,7 @@
   (assert-true (even? -2))
   (assert-false (even? 1))
   (assert-true (even? 0))
-  (try (even? "foo")
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (even? [])
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (even? None)
-       (except [e [TypeError]] (assert (in "not a number" (str e))))))
+  (assert-requires-num even?))
 
 (defn test-every? []
   "NATIVE: testing the every? function"
@@ -243,7 +226,7 @@
 
 (defn test-gensym []
   "NATIVE: testing the gensym function"
-  (import [hy.models.symbol [HySymbol]])
+  (import [hy.models [HySymbol]])
   (setv s1 (gensym))
   (assert (isinstance s1 HySymbol))
   (assert (= 0 (.find s1 ":G_")))
@@ -263,12 +246,11 @@
   "NATIVE: testing the inc function"
   (assert-equal 3 (inc 2))
   (assert-equal 0 (inc -1))
-  (try (do (inc "foo") (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (inc []) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (inc None) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e))))))
+  (assert-requires-num inc)
+
+  (defclass X [object]
+    [__add__ (fn [self other] (.format "__add__ got {}" other))])
+  (assert-equal (inc (X)) "__add__ got 1"))
 
 (defn test-instance []
   "NATIVE: testing instance? function"
@@ -394,24 +376,14 @@
   (assert-true (neg? -2))
   (assert-false (neg? 1))
   (assert-false (neg? 0))
-  (try (do (neg? "foo") (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (neg? []) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (neg? None) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e))))))
+  (when PY3
+    (assert-requires-num neg?)))
 
 (defn test-zero []
   "NATIVE: testing the zero? function"
   (assert-false (zero? -2))
   (assert-false (zero? 1))
-  (assert-true (zero? 0))
-  (try (do (zero? "foo") (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (zero? []) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (zero? None) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e))))))
+  (assert-true (zero? 0)))
 
 (defn test-none []
   "NATIVE: testing for `is None`"
@@ -421,32 +393,23 @@
   (assert-false (none? 0))
   (assert-false (none? "")))
 
-(defn test-nil? []
-  "NATIVE: testing for `is nil`"
-  (assert-true (nil? nil))
-  (assert-true (nil? None))
-  (setv f nil)
-  (assert-true (nil? f))
-  (assert-false (nil? 0))
-  (assert-false (nil? "")))
-
 (defn test-nth []
   "NATIVE: testing the nth function"
   (assert-equal 2 (nth [1 2 4 7] 1))
   (assert-equal 7 (nth [1 2 4 7] 3))
-  (assert-nil (nth [1 2 4 7] 5))
+  (assert-none (nth [1 2 4 7] 5))
   (assert-equal (nth [1 2 4 7] 5 "some default value")
                 "some default value")  ; with default specified
   (try (do (nth [1 2 4 7] -1) (assert False))
-       (except [e [ValueError]] nil))
+       (except [e [ValueError]] None))
   ;; now for iterators
   (assert-equal 2 (nth (iter [1 2 4 7]) 1))
   (assert-equal 7 (nth (iter [1 2 4 7]) 3))
-  (assert-nil (nth (iter [1 2 4 7]) 5))
+  (assert-none (nth (iter [1 2 4 7]) 5))
   (assert-equal (nth (iter [1 2 4 7]) 5 "some default value")
                 "some default value")  ; with default specified
   (try (do (nth (iter [1 2 4 7]) -1) (assert False))
-       (except [e [ValueError]] nil))
+       (except [e [ValueError]] None))
   (assert-equal 5 (nth (take 3 (drop 2 [1 2 3 4 5 6])) 2)))
 
 (defn test-numeric? []
@@ -463,12 +426,7 @@
   (assert-true (odd? -3))
   (assert-true (odd? 1))
   (assert-false (odd? 0))
-  (try (do (odd? "foo") (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (odd? []) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (odd? None) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e))))))
+  (assert-requires-num odd?))
 
 (defn test-partition []
   "NATIVE: testing the partition function"
@@ -482,9 +440,11 @@
   ;; length 1 is valid
   (assert-equal (list (partition ten 1))
                 [(, 0) (, 1) (, 2) (, 3) (, 4) (, 5) (, 6) (, 7) (, 8) (, 9)])
-  ;; tuples of length < 1 don't crash
+  ;; length 0 returns an empty sequence
   (assert-equal (list (partition ten 0)) [])
-  (assert-equal (list (partition ten -1)) [])
+  ;; negative length raises ValueError
+  (try (do (partition ten -1) (assert False))
+       (except [ValueError]))
   ;; keep remainder with a fillvalue
   (assert-equal (list (partition ten 3 :fillvalue "x"))
                 [(, 0 1 2) (, 3 4 5) (, 6 7 8) (, 9 "x" "x")])
@@ -493,19 +453,21 @@
                 [(, 0 1) (, 3 4) (, 6 7)])
   ;; overlap with step < n
   (assert-equal (list (partition (range 5) 2 1))
-                [(, 0 1) (, 1 2) (, 2 3) (, 3 4)]))
+                [(, 0 1) (, 1 2) (, 2 3) (, 3 4)])
+  ;; tee the input as necessary
+  ;; https://github.com/hylang/hy/issues/1237
+  (assert-equal (list (take 4 (partition (cycle [1 2 3]) 3)))
+                [(, 1 2 3) (, 1 2 3) (, 1 2 3) (, 1 2 3)])
+  (assert-equal (list (partition (iter (range 10))))
+                [(, 0 1) (, 2 3) (, 4 5) (, 6 7) (, 8 9)]))
 
 (defn test-pos []
   "NATIVE: testing the pos? function"
   (assert-true (pos? 2))
   (assert-false (pos? -1))
   (assert-false (pos? 0))
-  (try (do (pos? "foo") (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (pos? []) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e)))))
-  (try (do (pos? None) (assert False))
-       (except [e [TypeError]] (assert (in "not a number" (str e))))))
+  (when PY3
+    (assert-requires-num pos?)))
 
 (defn test-remove []
   "NATIVE: testing the remove function"
@@ -540,16 +502,16 @@
 (defn test-some []
   "NATIVE: testing the some function"
   (assert-true (some even? [2 4 6]))
-  (assert-nil (some even? [1 3 5]))
+  (assert-none (some even? [1 3 5]))
   (assert-true (some even? [1 2 3]))
-  (assert-nil (some even? []))
+  (assert-none (some even? []))
   ; 0, "" (empty string) and [] (empty list) are all logical false
-  (assert-nil (some identity [0 "" []]))
+  (assert-none (some identity [0 "" []]))
   ; non-empty string is logical true
   (assert-equal (some identity [0 "this string is non-empty" []])
                 "this string is non-empty")
-  ; nil if collection is empty
-  (assert-nil (some even? [])))
+  ; None if collection is empty
+  (assert-none (some even? [])))
 
 (defn test-string? []
   "NATIVE: testing string?"
@@ -568,7 +530,7 @@
   (setv res (list (take 0 (repeat "s"))))
   (assert-equal res [])
   (try (do (list (take -1 (repeat "s"))) (assert False))
-       (except [e [ValueError]] nil))
+       (except [e [ValueError]] None))
   (setv res (list (take 6 [1 2 None 4])))
   (assert-equal res [1 2 None 4]))
 
@@ -592,11 +554,11 @@
   (setv res (list (take-nth 3 [1 2 3 None 5 6])))
   (assert-equal res [1 None])
   ;; using 0 should raise ValueError
-  (let [passed false]
-    (try
-     (setv res (list (take-nth 0 [1 2 3 4 5 6 7])))
-     (except [ValueError] (setv passed true)))
-    (assert passed)))
+  (setv passed False)
+  (try
+   (setv res (list (take-nth 0 [1 2 3 4 5 6 7])))
+   (except [ValueError] (setv passed True)))
+  (assert passed))
 
 (defn test-take-while []
   "NATIVE: testing the take-while function"
@@ -628,7 +590,7 @@
   (assert (not (keyword? "foo")))
   (assert (not (keyword? ":foo")))
   (assert (not (keyword? 1)))
-  (assert (not (keyword? nil))))
+  (assert (not (keyword? None))))
 
 (defn test-import-init-hy []
   "NATIVE: testing import of __init__.hy"
@@ -643,3 +605,33 @@
                 [1 3 6 10 15])
   (assert-equal (list (accumulate [1 -2 -3 -4 -5] -))
                 [1 3 6 10 15]))
+
+(defn test-complement []
+  "NATIVE: test complement"
+  (def helper (complement identity))
+
+  (assert-true (helper False))
+  (assert-false (helper True)))
+
+(defn test-constantly []
+  "NATIVE: test constantly"
+  (def helper (constantly 42))
+
+  (assert-true (= (helper) 42))
+  (assert-true (= (helper 1 2 3) 42))
+  (assert-true (= (helper 1 2 :foo 3) 42)))
+
+(defn test-comp []
+  "NATIVE: test comp"
+  (assert-true ((comp odd? inc second) [1 2 3 4 5]))
+  (assert-true (= 1 ((comp first) [1 2 3])))
+  (assert-true ((comp even? inc +) 1 2 3 4 5))
+  (assert-true (= 5 ((comp) 5)))
+  (assert (is (comp) identity)))
+
+(defn test-juxt []
+  "NATIVE: test juxt"
+  (assert-equal ((juxt min max sum) [1 2 3 4 5 6])
+                [1 6 21])
+  (assert-equal ((juxt identity) 42)
+                [42]))

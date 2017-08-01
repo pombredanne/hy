@@ -1,11 +1,11 @@
+# Copyright 2017 the authors.
+# This file is part of Hy, which is free software licensed under the Expat
+# license. See the LICENSE.
 
 from hy.macros import macro, macroexpand
 from hy.lex import tokenize
 
-from hy.models.string import HyString
-from hy.models.list import HyList
-from hy.models.symbol import HySymbol
-from hy.models.expression import HyExpression
+from hy.models import HyString, HyList, HySymbol, HyExpression
 from hy.errors import HyMacroExpansionError
 
 from hy.compiler import HyASTCompiler

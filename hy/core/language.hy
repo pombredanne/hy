@@ -1,23 +1,6 @@
-;; Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-;; Copyright (c) 2013 Bob Tolbert <bob@tolbert.org>
-
-;; Permission is hereby granted, free of charge, to any person obtaining a
-;; copy of this software and associated documentation files (the "Software"),
-;; to deal in the Software without restriction, including without limitation
-;; the rights to use, copy, modify, merge, publish, distribute, sublicense,
-;; and/or sell copies of the Software, and to permit persons to whom the
-;; Software is furnished to do so, subject to the following conditions:
-
-;; The above copyright notice and this permission notice shall be included in
-;; all copies or substantial portions of the Software.
-
-;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-;; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-;; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-;; THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-;; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-;; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-;; DEALINGS IN THE SOFTWARE.
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
 
 ;;;; This contains some of the core Hy functions used
 ;;;; to make functional programming slightly easier.
@@ -33,15 +16,10 @@
   (import [StringIO [StringIO]])
   (import [io [StringIO]]))
 (import [hy._compat [long-type]]) ; long for python2, int for python3
-(import [hy.models.cons [HyCons]]
-        [hy.models.symbol [HySymbol]]
-        [hy.models.keyword [HyKeyword *keyword-prefix*]])
+(import [hy.models [HyCons HySymbol HyKeyword]])
 (import [hy.lex [LexException PrematureEndOfInput tokenize]])
-(import [hy.compiler [HyASTCompiler]])
-
-(defn _numeric-check [x]
-  (if (not (numeric? x))
-    (raise (TypeError (.format "{0!r} is not a number" x)))))
+(import [hy.compiler [HyASTCompiler spoof-positions]])
+(import [hy.importer [hy-eval :as eval]])
 
 (defn butlast [coll]
   "Returns coll except of last element."
@@ -51,6 +29,24 @@
   "Checks whether item is a collection"
   (and (iterable? coll) (not (string? coll))))
 
+(defn comp [&rest fs]
+  "Function composition"
+  (if (not fs) identity
+      (= 1 (len fs)) (first fs)
+      (do (setv rfs (reversed fs)
+                first-f (next rfs)
+                fs (tuple rfs))
+          (fn [&rest args &kwargs kwargs]
+            (setv res (first-f #* args #** kwargs))
+            (for* [f fs]
+              (setv res (f res)))
+            res))))
+
+(defn complement [f]
+  "Create a function that reverses truth value of another function"
+  (fn [&rest args &kwargs kwargs]
+    (not (f #* args #** kwargs))))
+
 (defn cons [a b]
   "Return a fresh cons cell with car = a and cdr = b"
   (HyCons a b))
@@ -59,6 +55,11 @@
   "Check whether c can be used as a cons object"
   (instance? HyCons c))
 
+(defn constantly [value]
+  "Create a function that always returns the same value"
+  (fn [&rest args &kwargs kwargs]
+    value))
+
 (defn keyword? [k]
   "Check whether k is a keyword"
   (and (instance? (type :foo) k)
@@ -66,17 +67,16 @@
 
 (defn dec [n]
   "Decrement n by 1"
-  (_numeric-check n)
   (- n 1))
 
-(defn disassemble [tree &optional [codegen false]]
+(defn disassemble [tree &optional [codegen False]]
   "Return the python AST for a quoted Hy tree as a string.
    If the second argument is true, generate python code instead."
   (import astor)
   (import hy.compiler)
 
-  (fake-source-positions tree)
-  (setv compiled (hy.compiler.hy_compile tree (calling-module-name)))
+  (spoof-positions tree)
+  (setv compiled (hy.compiler.hy-compile tree (calling-module-name)))
   ((if codegen
             astor.codegen.to_source
             astor.dump)
@@ -85,13 +85,12 @@
 (defn distinct [coll]
   "Return a generator from the original collection with duplicates
    removed"
-  (let [seen (set)
-        citer (iter coll)]
+  (setv seen (set) citer (iter coll))
   (for* [val citer]
     (if (not_in val seen)
       (do
        (yield val)
-       (.add seen val))))))
+       (.add seen val)))))
 
 (if-python2
  (def
@@ -156,13 +155,13 @@
 
 (defn drop [count coll]
   "Drop `count` elements from `coll` and yield back the rest"
-  (islice coll count nil))
+  (islice coll count None))
 
 (defn drop-last [n coll]
   "Return a sequence of all but the last n elements in coll."
-  (let [iters (tee coll)]
-    (map first (apply zip [(get iters 0)
-                           (drop n (get iters 1))]))))
+  (setv iters (tee coll))
+  (map first (zip #* [(get iters 0)
+                      (drop n (get iters 1))])))
 
 (defn empty? [coll]
   "Return True if `coll` is empty"
@@ -170,21 +169,11 @@
 
 (defn even? [n]
   "Return true if n is an even number"
-  (_numeric-check n)
   (= (% n 2) 0))
 
 (defn every? [pred coll]
   "Return true if (pred x) is logical true for every x in coll, else false"
   (all (map pred coll)))
-
-(defn fake-source-positions [tree]
-  "Fake the source positions for a given tree"
-  (if (coll? tree)
-    (for* [subtree tree]
-          (fake-source-positions subtree)))
-  (for* [attr '[start-line end-line start-column end-column]]
-        (if (not (hasattr tree attr))
-          (setattr tree attr 1))))
 
 (defn flatten [coll]
   "Return a single flat list expanding all members of coll"
@@ -212,14 +201,14 @@
 (setv _gensym_lock (Lock))
 
 (defn gensym [&optional [g "G"]]
-  (let [new_symbol None]
-    (global _gensym_counter)
-    (global _gensym_lock)
-    (.acquire _gensym_lock)
-    (try (do (setv _gensym_counter (inc _gensym_counter))
-             (setv new_symbol (HySymbol (.format ":{0}_{1}" g _gensym_counter))))
-         (finally (.release _gensym_lock)))
-    new_symbol))
+  (setv new_symbol None)
+  (global _gensym_counter)
+  (global _gensym_lock)
+  (.acquire _gensym_lock)
+  (try (do (setv _gensym_counter (inc _gensym_counter))
+           (setv new_symbol (HySymbol (.format ":{0}_{1}" g _gensym_counter))))
+       (finally (.release _gensym_lock)))
+  new_symbol)
 
 (defn calling-module-name [&optional [n 1]]
   "Get the name of the module calling `n` levels up the stack from the
@@ -231,7 +220,7 @@
 
 (defn first [coll]
   "Return first item from `coll`"
-  (next (iter coll) nil))
+  (next (iter coll) None))
 
 (defn identity [x]
   "Returns the argument unchanged"
@@ -239,7 +228,6 @@
 
 (defn inc [n]
   "Increment n by 1"
-  (_numeric-check n)
   (+ n 1))
 
 (defn instance? [klass x]
@@ -250,19 +238,19 @@
   (long-type x))
 
 (defn integer? [x]
-  "Return True if x in an integer"
+  "Return True if x is an integer"
   (isinstance x (, int long-type)))
 
 (defn integer-char? [x]
   "Return True if char `x` parses as an integer"
   (try
     (integer? (int x))
-    (except [e ValueError] False)
-    (except [e TypeError] False)))
+    (except [ValueError] False)
+    (except [TypeError] False)))
 
 (defn interleave [&rest seqs]
   "Return an iterable of the first item in each of seqs, then the second etc."
-  (chain.from-iterable (apply zip seqs)))
+  (chain.from-iterable (zip #* seqs)))
 
 (defn interpose [item seq]
   "Return an iterable of the elements of seq separated by item"
@@ -274,13 +262,20 @@
 
 (defn iterate [f x]
   (setv val x)
-  (while true
+  (while True
     (yield val)
     (setv val (f val))))
 
 (defn iterator? [x]
   "Return true if x is an iterator"
   (isinstance x collections.Iterator))
+
+(defn juxt [f &rest fs]
+  "Return a function that applies each of the supplied functions to a single
+   set of arguments and collects the results into a list."
+  (setv fs (cons f fs))
+  (fn [&rest args &kwargs kwargs]
+    (list-comp (f #* args #** kwargs) [f fs])))
 
 (defn last [coll]
   "Return last item from `coll`"
@@ -290,7 +285,7 @@
   "Return a dotted list construed from the elements of the argument"
   (if (not tl)
     hd
-    (cons hd (apply list* tl))))
+    (cons hd (list* #* tl))))
 
 (defn macroexpand [form]
   "Return the full macro expansion of form"
@@ -312,42 +307,36 @@
    from the latter (left-to-right) will be combined with the mapping in
    the result by calling (f val-in-result val-in-latter)."
   (if (any maps)
-    (let [merge-entry (fn [m e]
-                        (let [k (get e 0)
-                              v (get e 1)]
-                        (if (in k m)
-                          (assoc m k (f (get m k) v))
-                          (assoc m k v)))
-          m)
-      merge2 (fn [m1 m2]
-               (reduce merge-entry (.items m2) (or m1 {})))]
-    (reduce merge2 maps))))
+    (do
+      (defn merge-entry [m e]
+        (setv k (get e 0) v (get e 1))
+        (if (in k m)
+          (assoc m k (f (get m k) v))
+          (assoc m k v))
+        m)
+      (defn merge2 [m1 m2]
+        (reduce merge-entry (.items m2) (or m1 {})))
+      (reduce merge2 maps))))
 
 (defn neg? [n]
   "Return true if n is < 0"
-  (_numeric-check n)
   (< n 0))
 
 (defn none? [x]
   "Return true if x is None"
   (is x None))
 
-(defn nil? [x]
-  "Return true if x is nil (None)"
-  (is x None))
-
 (defn numeric? [x]
   (import numbers)
   (instance? numbers.Number x))
 
-(defn nth [coll n &optional [default nil]]
+(defn nth [coll n &optional [default None]]
   "Return nth item in collection or sequence, counting from 0.
-   Return nil if out of bounds unless specified otherwise."
+   Return None if out of bounds unless specified otherwise."
   (next (drop n coll) default))
 
 (defn odd? [n]
   "Return true if n is an odd number"
-  (_numeric-check n)
   (= (% n 2) 1))
 
 (def -sentinel (object))
@@ -357,14 +346,15 @@
    more to skip elements, or less for a sliding window with overlap."
   (setv
    step (or step n)
-   slices (genexpr (itertools.islice coll start nil step) [start (range n)]))
+   coll-clones (tee coll n)
+   slices (genexpr (islice (get coll-clones start) start None step)
+                   [start (range n)]))
   (if (is fillvalue -sentinel)
-    (apply zip slices)
-    (apply zip-longest slices {"fillvalue" fillvalue})))
+    (zip #* slices)
+    (zip-longest #* slices :fillvalue fillvalue)))
 
 (defn pos? [n]
   "Return true if n is > 0"
-  (_numeric_check n)
   (> n 0))
 
 (defn rest [coll]
@@ -373,7 +363,7 @@
 
 (defn repeatedly [func]
   "Yield result of running func repeatedly"
-  (while true
+  (while True
     (yield (func))))
 
 (defn second [coll]
@@ -381,8 +371,8 @@
   (nth coll 1))
 
 (defn some [pred coll]
-  "Return the first logical true value of (pred x) for any x in coll, else nil"
-  (first (filter nil (map pred coll))))
+  "Return the first logical true value of (pred x) for any x in coll, else None"
+  (first (filter None (map pred coll))))
 
 (defn string [x]
   "Cast x as current string implementation"
@@ -399,40 +389,38 @@
 (defn take [count coll]
   "Take `count` elements from `coll`, or the whole set if the total
     number of entries in `coll` is less than `count`."
-  (islice coll nil count))
+  (islice coll None count))
 
 (defn take-nth [n coll]
   "Return every nth member of coll
      raises ValueError for (not (pos? n))"
-  (if (pos? n)
-    (let [citer (iter coll)
-          skip (dec n)]
-    (for* [val citer]
-      (yield val)
-      (for* [_ (range skip)]
-        (next citer))))
-  (raise (ValueError "n must be positive"))))
+  (if (not (pos? n))
+    (raise (ValueError "n must be positive")))
+  (setv citer (iter coll) skip (dec n))
+  (for* [val citer]
+    (yield val)
+    (for* [_ (range skip)]
+      (next citer))))
 
 (defn zero? [n]
   "Return true if n is 0"
-  (_numeric_check n)
   (= n 0))
 
 (defn read [&optional [from-file sys.stdin]
                       [eof ""]]
   "Read from input and returns a tokenized string.
    Can take a given input buffer to read from"
-  (def buff "")
-  (while true
-    (def inn (str (.readline from-file)))
+  (setv buff "")
+  (while True
+    (setv inn (string (.readline from-file)))
     (if (= inn eof)
-      (raise (EOFError "Reached end of file" )))
-    (setv buff (+ buff inn))
+      (raise (EOFError "Reached end of file")))
+    (+= buff inn)
     (try
-      (def parsed (first (tokenize buff)))
+      (setv parsed (first (tokenize buff)))
       (except [e [PrematureEndOfInput IndexError]])
-      (else (if parsed (break)))))
-    parsed)
+      (else (break))))
+  parsed)
 
 (defn read-str [input]
   "Reads and tokenizes first line of input"
@@ -445,7 +433,7 @@
 (defn keyword [value]
   "Create a keyword from the given value. Strings numbers and even objects
   with the __name__ magic will work"
-  (if (and (string? value) (value.startswith *keyword-prefix*))
+  (if (and (string? value) (value.startswith HyKeyword.PREFIX))
     (hyify value)
     (if (string? value)
       (HyKeyword (+ ":" (hyify value)))
@@ -456,7 +444,7 @@
 (defn name [value]
   "Convert the given value to a string. Keyword special character will be stripped.
   String will be used as is. Even objects with the __name__ magic will work"
-  (if (and (string? value) (value.startswith *keyword-prefix*))
+  (if (and (string? value) (value.startswith HyKeyword.PREFIX))
     (hyify (cut value 2))
     (if (string? value)
       (hyify value)
@@ -466,16 +454,18 @@
 
 (defn xor [a b]
   "Perform exclusive or between two parameters"
-  (or (and a (not b))
-      (and b (not a))))
+  (if (and a b)
+    False
+    (or a b)))
 
 (def *exports*
   '[*map accumulate butlast calling-module-name chain coll? combinations
-    compress cons cons? count cycle dec distinct disassemble drop drop-last
-    drop-while empty? even? every? first filter flatten float? fraction gensym
-    group-by identity inc input instance? integer integer? integer-char?
-    interleave interpose islice iterable? iterate iterator? keyword keyword?
-    last list* macroexpand macroexpand-1 map merge-with multicombinations name
-    neg? nil? none? nth numeric? odd? partition permutations pos? product range
-    read read-str remove repeat repeatedly rest reduce second some string
-    string? symbol? take take-nth take-while xor tee zero? zip zip-longest])
+    comp complement compress cons cons? constantly count cycle dec distinct
+    disassemble drop drop-last drop-while empty? eval even? every? first filter
+    flatten float? fraction gensym group-by identity inc input instance?
+    integer integer? integer-char? interleave interpose islice iterable?
+    iterate iterator? juxt keyword keyword? last list* macroexpand
+    macroexpand-1 map merge-with multicombinations name neg? none? nth
+    numeric? odd? partition permutations pos? product range read read-str
+    remove repeat repeatedly rest reduce second some string string? symbol?
+    take take-nth take-while xor tee zero? zip zip-longest])

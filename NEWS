@@ -1,3 +1,164 @@
+Changes from 0.13.0
+
+   [ Language Changes ]
+   * `yield-from` is no longer supported under Python 2
+   * `apply` has been replaced with Python-style unpacking operators `#*` and
+     `#**` (e.g., `(f #* args #** kwargs)`)
+   * Single-character "sharp macros" changed to "tag macros", which can have
+     longer names
+   * Periods are no longer allowed in keywords
+   * `eval` is now a function instead of a special form
+   * The compiler now automatically promotes values to Hy model objects
+     as necessary, so you can write ``(eval `(+ 1 ~n))`` instead of
+     ``(eval `(+ 1 ~(HyInteger n)))``
+   * Literal `Inf`s and `NaN`s must now be capitalized like that
+   * `get` is available as a function
+
+   [ Bug Fixes ]
+   * Numeric literals are no longer parsed as symbols when followed by a dot
+     and a symbol
+   * Hy now respects the environment variable PYTHONDONTWRITEBYTECODE
+   * String literals should no longer be interpreted as special forms or macros
+   * Tag macros (née sharp macros) whose names begin with `!` are no longer
+     mistaken for shebang lines
+   * Fixed a bug where REPL history wasn't saved if you quit the REPL with
+     `(quit)` or `(exit)`
+
+Changes from 0.12.1
+
+   [ Language Changes ]
+   * Pythons 2.6, 3.0, 3.1, and 3.2 are no longer supported
+   * `let` has been removed. Python's scoping rules do not make a proper
+     implementation of it possible. Use `setv` instead.
+   * `lambda` has been removed, but `fn` now does exactly what `lambda` did
+   * `defreader` has been renamed to `defsharp`; what were previously called
+     "reader macros", which were never true reader macros, are now called
+     "sharp macros"
+   * `try` now enforces the usual Python order for its elements (`else` must
+     follow all `except`s, and `finally` must come last). This is only a
+     syntactic change; the elements were already run in Python order even when
+     defined out of order.
+   * `try` now requires an `except` or `finally` clause, as in Python
+   * Importing or executing a Hy file automatically byte-compiles it, or loads
+     a byte-compiled version if it exists and is up to date. This brings big
+     speed boosts, even for one-liners, because Hy no longer needs to recompile
+     its standard library for every startup.
+   * Added bytestring literals, which create `bytes` objects under Python 3
+     and `str` objects under Python 2
+   * Commas and underscores are allowed in numeric literals
+   * Many more operators (e.g., `**`, `//`, `not`, `in`) can be used
+     as first-class functions
+   * The semantics of binary operators when applied to fewer or more
+     than two arguments have been made more logical
+   * `(** a b c d)` is now equivalent to `(** a (** b (** c d)))`,
+     not `(** (** (** a b) c) d)`
+   * `setv` always returns `None`
+   * When a `try` form executes an `else` clause, the return value for the
+     `try` form is taken from `else` instead of the `try` body. For example,
+     `(try 1 (except [ValueError] 2) (else 3))` returns `3`.
+   * `xor`: If exactly one argument is true, return it
+   * `hy.core.reserved` is now `hy.extra.reserved`
+   * `cond` now supports single argument branches
+
+   [ Bug Fixes ]
+   * All shadowed operators have the same arities as real operators
+   * Shadowed comparison operators now use `and` instead of `&`
+     for chained comparisons
+   * `partition` no longer prematurely exhausts input iterators
+   * `read` and `read-str` no longer raise an error when the input
+     parses to a false value (e.g., the empty string)
+   * A `yield` inside of a `with` statement will properly suppress implicit
+     returns
+   * `setv` no longer unnecessarily tries to get attributes
+   * `loop` no longer replaces string literals equal to "recur"
+   * The REPL now prints the correct value of `do` and `try` forms
+   * Fixed a crash when tokenizing a single quote followed by whitespace
+
+   [ Misc. Improvements ]
+   * New contrib module `hy-repr`
+   * Added a command-line option `--repl-output-fn`
+
+Changes from 0.12.0
+
+   [ Bug Fixes ]
+   * Allow installation without Git
+
+Changes from 0.11.0
+
+This release brings some quite significant changes on the language and as a
+result very large portions of previously written Hy programs will require
+changes. At the same time, documentation and error messages were improved,
+hopefully making the language easier to use.
+
+   [ Language Changes ]
+   * New syntax for let, with and defclass
+   * defmacro will raise an error on &kwonly, &kwargs and &key arguments
+   * Keyword argument labels to functions are required to be strings
+   * slice replaced with cut to stop overloading the python built-in
+   * removed reduntant throw, catch, progn, defun, lisp-if, lisp-if-not,
+     filterfalse, true, false and nil
+   * global now takes multiple arguments
+   * Nonlocal keyword (Python 3 only)
+   * Set literals (#{1 2 3})
+   * Keyword-only arguments (Python 3 only)
+   * Setv can assign multiple variables at once
+   * Empty form allowed for setv, del and cond
+   * One-argument division, rationals and comparison operators (=, !=, <, >, <=, >=)
+   * partition form for chunking collection to n-sized tuples
+   * defn-alias and demacro-alias moved into hy.contrib.alias
+   * None is returned instead of the last form in --init--
+   * for and cond can take a multi-expression body
+   * Hex and octal support for integer literals
+   * Apply now mangles strings and keywords according to Hy mangling rules
+   * Variadic if
+   * defreader can use strings as macro names
+   * as-> macro added
+   * require syntax changed and now supports same features as import
+   * defmulti changed to work with dispatching function
+   * old defmulti renamed to defn
+   * Lazy sequences added to contrib
+   * defmacro! added for once-only evaluation for parameters
+   * comp, constantly, complement and juxt added
+   * keyword arguments allowed in method calls before the object
+
+   [ Bug Fixes ]
+   * Better error when for doesn't have body
+   * Better error detection with list comprehensions in Python 2.7
+   * Setting value to callable will raise an error
+   * defclass can have properties / methods with built-in names
+   * Better error messages on invalid macro arguments
+   * Better error messages with hy2py and hyc
+   * Cmdline error to string conversion.
+   * In python 3.3+, generator functions always return a value
+   * &rest can be used after &optional
+
+   [ Misc. Improvements ]
+   * Version information includes SHA1 of current commit
+   * Improved Python 3.5 support
+   * Allow specification of global table and module name for (eval ...)
+   * General documentation improvements
+   * Contrib.walk: Coerce non-list iterables into list form
+   * Flow macros (case and switch)
+   * ap-pipe and ap-compose macros
+   * #@ reader macro for with-decorator
+   * Type check `eval` parameters
+   * `and` and `or` short-circuit
+   * `and` and `or` accept zero or more arguments
+   * read-str for tokenizing a line
+   * botsbuildbots moved to contrib
+   * Trailing bangs on symbols are mangled
+   * xi forms (anonymous function literals)
+   * if form optimizations in some cases
+   * xor operator
+   * Overhauled macros to allow macros to ref the Compiler
+   * ap-if requires then branch
+   * Parameters for numeric operations (inc, dec, odd?, even?, etc.) aren't type checked
+   * import_file_to_globals added for use in emacs inferior lisp mode
+   * hy.core.reserved added for querying reserved words
+   * hy2py can use standard input instead of a file
+   * alias, curry, flow and meth removed from contrib
+   * contrib.anaphoric moved to hy.extra
+
 Changes from 0.10.1
 
    [ Language Changes ]
@@ -62,7 +223,7 @@ Changes from 0.10.0
   * doto macro added
   * keyword? to find out keywords
   * setv no longer allows "." in names
-  
+
   [Internals ]
   * Builtins reimplemented in terms of python stdlib
   * gensyms (defmacro/g!) handles non-string types better
@@ -89,12 +250,12 @@ Changes from 0.9.12
    - Hy Society
 
   [ Breaking Changes ]
-  
+
   We're calling this release 0.10 because we broke
-  API. Sorry about that. We've removed kwapply in 
+  API. Sorry about that. We've removed kwapply in
   favor of using `apply`. Please be sure to upgrade
   all code to work with `apply`.
-  
+
   (apply function-call args kwargs)  ; is the signature
 
   [Thanks]
@@ -103,17 +264,17 @@ Changes from 0.9.12
    As always, massive hugs to olasd for the constant reviews and for
    implementing HyCons cells. Thanks to @kenanb for redesigning the
    new Hy logo.
-    
+
    Many thanks to algernon for working on adderall, which helped
    push Hy further this cycle. Adderall is an implementation of miniKanren
    in Hy. If you're interested in using Adderall, check out hydiomatic,
    which prettifies Hy source using Adderall rules.
-   
+
    This release saw an increase of about 11 contributors for a point
    release, you guys rock!
 
     -Hy Society
-     
+
   [ Language Changes ]
 
   * `for' revamped again (Last time, we hope!), this time using a saner
@@ -131,7 +292,7 @@ Changes from 0.9.12
   * `disassemble' added to core, which dumps the AST or equivalent python code
   * `coll?' added to core to check for a collection
   * `identity' function added to core
-  
+
   [ Misc. Fixes ]
   * Lots of doc fixes. Reorganization as well as better docs on Hy internals
   * Universal Wheel Support
@@ -139,11 +300,11 @@ Changes from 0.9.12
     from clojure to hy
   * Hy REPL supports invoking with --spy & -i options [reword]
   * `first' and `rest' are functions and not macros anymore
-  * "clean" target added to Makefile 
+  * "clean" target added to Makefile
   * hy2py supports a bunch of commandline options to show AST, source etc.
   * Sub-object mangling: every identifier is split along the dots & mangled
     separately
-  
+
   [ Bug Fixes ]
   * Empty MacroExpansions work as expected
   * Python 3.4 port. Sorry this wasn't in a 3.4 release time, we forgot to do
@@ -167,18 +328,18 @@ Changes from Hy 0.9.11
     0.9.12 comes with some massive changes,
     We finally took the time to implement gensym, as well as a few
     other bits that help macro writing. Check the changelog for
-    what exactly was added. 
-    
+    what exactly was added.
+
     The biggest feature, Reader Macros, landed later
     in the cycle, but were big enough to warrant a release on its
     own. A huge thanks goes to Foxboron for implementing them
     and a massive hug goes out to olasd for providing ongoing
     reviews during the development.
-    
+
     Welcome to the new Hy contributors, Henrique Carvalho Alves,
     Kevin Zita and Kenan Bölükbaşı. Thanks for your work so far,
     folks!
-    
+
     Hope y'all enjoy the finest that 2013 has to offer,
       - Hy Society
 
@@ -289,7 +450,7 @@ Changes from Hy 0.9.10
 Changes from Hy 0.9.9
 
   [ Stupid Fixes ]
- 
+
     * I forgot to include hy.core.language in the sdist. (PT)
 
 Changes from Hy 0.9.8

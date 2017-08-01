@@ -8,7 +8,6 @@ Tutorial
 ..  - How do I do array ranges?  e.g. x[5:] or y[2:10]
 ..  - Blow your mind with macros!
 ..  - Where's my banana???
-..  - Mention that you can import .hy files in .py files and vice versa!
 
 Welcome to the Hy tutorial!
 
@@ -194,7 +193,6 @@ Hy.  Let's experiment with this in the hy interpreter::
   [1, 2, 3]
   => {"dog" "bark"
   ... "cat" "meow"}
-  ...
   {'dog': 'bark', 'cat': 'meow'}
   => (, 1 2 3)
   (1, 2, 3)
@@ -204,6 +202,20 @@ Hy.  Let's experiment with this in the hy interpreter::
   Fraction(1, 2)
 
 Notice the last two lines: Hy has a fraction literal like Clojure.
+
+If you start Hy like this (a shell alias might be helpful)::
+
+  $ hy --repl-output-fn=hy.contrib.hy-repr.hy-repr
+
+the interactive mode will use :ref:`hy-repr-fn` instead of Python's
+native ``repr`` function to print out values, so you'll see values in
+Hy syntax rather than Python syntax::
+
+  => [1 2 3]
+  [1 2 3]
+  => {"dog" "bark"
+  ... "cat" "meow"}
+  {"dog" "bark" "cat" "meow"}
 
 If you are familiar with other Lisps, you may be interested that Hy
 supports the Common Lisp method of quoting:
@@ -264,14 +276,14 @@ In Hy, you would do:
      (print "That variable is too big!")]
     [(< somevar 10)
      (print "That variable is too small!")]
-    [true
+    [True
      (print "That variable is jussssst right!")])
 
 What you'll notice is that ``cond`` switches off between a statement
 that is executed and checked conditionally for true or falseness, and
 then a bit of code to execute if it turns out to be true.  You'll also
 notice that the ``else`` is implemented at the end simply by checking
-for ``true`` -- that's because ``true`` will always be true, so if we get
+for ``True`` -- that's because ``True`` will always be true, so if we get
 this far, we'll always run that one!
 
 You might notice above that if you have code like:
@@ -292,7 +304,7 @@ You can do the following:
    (if (try-some-thing)
      (do
        (print "this is if true")
-       (print "and why not, let's keep talking about how true it is!))
+       (print "and why not, let's keep talking about how true it is!"))
      (print "this one's still simply just false"))
 
 You can see that we used ``do`` to wrap multiple statements.  If you're
@@ -411,8 +423,7 @@ The same thing in Hy::
   => (optional-arg 1 2 3 4)
   [1 2 3 4]
 
-If you're running a version of Hy past 0.10.1 (eg, git master),
-there's also a nice new keyword argument syntax::
+You can call keyword arguments like this::
 
   => (optional-arg :keyword1 1
   ...              :pos2 2
@@ -420,21 +431,13 @@ there's also a nice new keyword argument syntax::
   ...              :keyword2 4)
   [3, 2, 1, 4]
 
-Otherwise, you can always use `apply`.  But what's `apply`?
-
-Are you familiar with passing in `*args` and `**kwargs` in Python?::
-
-  >>> args = [1 2]
-  >>> kwargs = {"keyword2": 3
-  ...           "keyword1": 4}
-  >>> optional_arg(*args, **kwargs)
-
-We can reproduce this with `apply`::
+You can unpack arguments with the syntax ``#* args`` and ``#** kwargs``,
+similar to `*args` and `**kwargs` in Python::
 
   => (setv args [1 2])
   => (setv kwargs {"keyword2" 3
   ...              "keyword1" 4})
-  => (apply optional-arg args kwargs)
+  => (optional-arg #* args #** kwargs)
   [1, 2, 4, 3]
 
 There's also a dictionary-style keyword arguments construction that
@@ -448,7 +451,7 @@ looks like:
 The difference here is that since it's a dictionary, you can't rely on
 any specific ordering to the arguments.
 
-Hy also supports ``*args`` and ``**kwargs``.  In Python::
+Hy also supports ``*args`` and ``**kwargs`` in parameter lists.  In Python::
 
   def some_func(foo, bar, *args, **kwargs):
     import pprint
@@ -477,6 +480,11 @@ like::
           Return our copy of x
           """
           return self.x
+          
+And we might use it like::
+
+  bar = FooBar(1)
+  print bar.get_x()
 
 
 In Hy:
@@ -492,7 +500,20 @@ In Hy:
     (defn get-x [self]
       "Return our copy of x"
       self.x))
+      
+And we can use it like:
 
+.. code-block:: clj
+
+  (setv bar (FooBar 1))
+  (print (bar.get-x))
+  
+Or using the leading dot syntax!
+
+.. code-block:: clj
+
+  (print (.get-x (FooBar 1)))
+      
 
 You can also do class-level attributes.  In Python::
 
@@ -532,15 +553,15 @@ we used "Tuukka" as parameter):
 
 .. code-block:: clj
 
-  (print "Hello there," Tuukka)
+  (print "Hello there," "Tuukka")
 
 We can also manipulate code with macros:
 
 .. code-block:: clj
 
   => (defmacro rev [code]
-  ...  (let [op (last code) params (list (butlast code))]
-  ...  `(~op ~@params)))
+  ...  (setv op (last code) params (list (butlast code)))
+  ...  `(~op ~@params))
   => (rev (1 2 3 +))
   6
 
@@ -551,16 +572,16 @@ elements, so by the time program started executing, it actually reads:
 
   (+ 1 2 3)
 
-Sometimes it's nice to have a very short name for a macro that doesn't take much
-space or use extra parentheses. Reader macros can be pretty useful in these
-situations (and since Hy operates well with unicode, we aren't running out of
-characters that soon):
+Sometimes it's nice to be able to call a one-parameter macro without
+parentheses. Tag macros allow this. The name of a tag macro is typically
+one character long, but since Hy operates well with Unicode, we aren't running
+out of characters that soon:
 
 .. code-block:: clj
 
-  => (defreader ↻ [code]
-  ...  (let [op (last code) params (list (butlast code))]
-  ...  `(~op ~@params)))
+  => (deftag ↻ [code]
+  ...  (setv op (last code) params (list (butlast code)))
+  ...  `(~op ~@params))
   => #↻(1 2 3 +)
   6
 
@@ -568,21 +589,27 @@ Macros are useful when one wishes to extend Hy or write their own
 language on top of that. Many features of Hy are macros, like ``when``,
 ``cond`` and ``->``.
 
-To use macros defined in a different module, it is not enough to
-``import`` the module, because importing happens at run-time, while we
-would need macros at compile-time. Instead of importing the module
-with macros, ``require`` must be used:
+What if you want to use a macro that's defined in a different
+module? The special form ``import`` won't help, because it merely
+translates to a Python ``import`` statement that's executed at
+run-time, and macros are expanded at compile-time, that is,
+during the translate from Hy to Python. Instead, use ``require``,
+which imports the module and makes macros available at
+compile-time. ``require`` uses the same syntax as ``import``.
 
 .. code-block:: clj
 
    => (require tutorial.macros)
-   => (rev (1 2 3 +))
+   => (tutorial.macros.rev (1 2 3 +))
    6
 
 Hy <-> Python interop
 =====================
 
-By importing Hy, you can use Hy directly from Python!
+Using Hy from Python
+--------------------
+
+You can use Hy modules in Python!
 
 If you save the following in ``greetings.hy``:
 
@@ -590,7 +617,7 @@ If you save the following in ``greetings.hy``:
 
     (defn greet [name] (print "hello from hy," name))
 
-Then you can use it directly from python, by importing hy before importing
+Then you can use it directly from Python, by importing Hy before importing
 the module. In Python::
 
     import hy
@@ -598,40 +625,24 @@ the module. In Python::
 
     greetings.greet("Foo")
 
-You can also declare a function in python (or even a class!) and use it in Hy!
+Using Python from Hy
+--------------------
+
+You can also use any Python module in Hy!
 
 If you save the following in ``greetings.py`` in Python::
 
     def greet(name):
         print("hello, %s" % (name))
 
-You can use it in Hy:
+You can use it in Hy (see :ref:`import`):
 
 .. code-block:: clj
 
     (import greetings)
     (.greet greetings "foo")
 
-To use keyword arguments, you can use in ``greetings.py``::
-
-    def greet(name, title="Sir"):
-        print("Greetings, %s %s" % (title,name))
-
-.. code-block:: clj
-
-    (import greetings)
-    (.greet greetings "Foo")
-    (.greet greetings "Foo" "Darth")
-    (apply (. greetings greet) ["Foo"] {:title "Lord"})
-
-Which would output::
-
-  Greetings, Sir Foo
-
-  Greetings, Darth Foo
-
-  Greetings, Lord Foo
-
+More information on :doc:`../language/interop`.
 
 
 Protips!

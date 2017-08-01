@@ -10,8 +10,7 @@
 * `Will Kahn-Greene <https://github.com/willkg>`_
 * `Paul Tagliamonte <https://github.com/paultag>`_
 * `Nicolas Dandrimont <https://github.com/olasd>`_
-* `Bob Tolbert <https://github.com/rwtolbert>`_
 * `Berker Peksag <https://github.com/berkerpeksag>`_
 * `Clinton N. Dreisbach <https://github.com/cndreisbach>`_
 * `han semaj <https://github.com/microamp>`_
-* `Zack M. Davis <https://github.com/zackmdavis>`_
+* `Kodi Arfer <https://github.com/Kodiologist>`_

@@ -1,3 +1,11 @@
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
+
+(defmacro car [x] `(get ~x 0))
+(defmacro cdr [x] `(cut ~x 1))
+
+
 (defn test-cons-mutability []
   "Test the mutability of conses"
   (setv tree (cons (cons 1 2) (cons 2 3)))
@@ -19,8 +27,8 @@
   (defn t= [a b]
     (and (= a b) (= (type a) (type b))))
   (assert (t= (cons 1 2) '(1 . 2)))
-  (assert (t= (cons 1 nil) '(1)))
-  (assert (t= (cons nil 2) '(nil . 2)))
+  (assert (t= (cons 1 None) '(1)))
+  (assert (t= (cons None 2) '(None . 2)))
   (assert (t= (cons 1 []) [1]))
   (setv tree (cons (cons 1 2) (cons 2 3)))
   (assert (t= (car tree) (cons 1 2)))
@@ -52,7 +60,7 @@
   (assert (cons? '(1 2 3 . 4)))
   (assert (cons? (list* 1 2 3)))
   (assert (not (cons? (cons 1 [2]))))
-  (assert (not (cons? (list* 1 nil)))))
+  (assert (not (cons? (list* 1 None)))))
 
 
 (defn test-list* []
